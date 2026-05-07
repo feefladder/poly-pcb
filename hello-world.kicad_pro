@@ -504,7 +504,7 @@
       "plot": "out/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "hello-world.glb",
+      "step": "hello-world.stl",
       "svg": "",
       "vrml": ""
     },

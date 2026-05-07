@@ -465,7 +465,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "hello-world.kicad_pro",
+    "filename": "triangle.kicad_pro",
     "version": 3
   },
   "net_settings": {

@@ -1,0 +1,136 @@
+(footprint "SW_PUSH-12mm_smd"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "Generic SW PUSH 12mm, e.g https://sten-eswitch-13110800-production.s3.amazonaws.com/system/asset/product_line/data_sheet/143/TL1100.pdf")
+	(tags "tact sw push 12mm")
+	(property "Reference" "REF**"
+		(at 5.83 -5.41 0)
+		(layer "F.SilkS")
+		(hide yes)
+		(uuid "d1cacafe-8a76-44dc-b95c-ef5134b08eae")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "SW_PUSH-12mm_smd"
+		(at 6.37 10.5 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "8d5892e0-1c39-434e-bda6-231825380cdd")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "44494a51-e5c9-4c05-990e-8aaac319f518")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "1420f15e-227f-4b2c-8622-cccef4faba2c")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(fp_rect
+		(start -6 -6)
+		(end 6 6)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "Edge.Cuts")
+		(uuid "5ebfa65f-5265-4dde-8799-088dc56b8ecd")
+	)
+	(fp_circle
+		(center 0 -4.5)
+		(end 1.8 -4.5)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "Edge.Cuts")
+		(uuid "7aa1ac5b-f856-47e3-b6cb-fae26b4ce129")
+	)
+	(fp_circle
+		(center 0 4.5)
+		(end 1.8 4.5)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "Edge.Cuts")
+		(uuid "2451a2be-f57e-48f8-ab7e-de1fadee09a2")
+	)
+	(pad "1" smd roundrect
+		(at -7.25 -2.5)
+		(size 4 3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.15)
+		(thermal_bridge_angle 45)
+		(uuid "46f948a4-c4a0-4acd-9f50-c53943c856b2")
+	)
+	(pad "2" smd roundrect
+		(at 7.25 -2.5)
+		(size 4 3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.15)
+		(thermal_bridge_angle 45)
+		(uuid "f45ccc53-eb85-407c-a372-1b3a9f5f1c9f")
+	)
+	(pad "3" smd roundrect
+		(at -7.25 2.5)
+		(size 4 3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.15)
+		(thermal_bridge_angle 45)
+		(uuid "bd1375e8-8c7f-4134-9509-b80960b88347")
+	)
+	(pad "4" smd roundrect
+		(at 7.25 2.5)
+		(size 4 3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.15)
+		(thermal_bridge_angle 45)
+		(uuid "85d07903-151c-46b4-9bbd-f569dbb248c6")
+	)
+	(embedded_fonts no)
+	(model "${KICAD9_3DMODEL_DIR}/Button_Switch_THT.3dshapes/SW_PUSH-12mm.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+)

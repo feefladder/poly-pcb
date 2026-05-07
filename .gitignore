@@ -11,6 +11,9 @@ report.txt
 *B_*.svg
 *F_*.svg
 *Edge_Cuts.svg
+*.stl
+*-kicad-artifacts/
+*.glb
 
 # Temporary files
 *.000

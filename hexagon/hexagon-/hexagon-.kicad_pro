@@ -504,7 +504,7 @@
       "plot": "out/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "hexagon-.glb",
+      "step": "hexagon-.stl",
       "svg": "",
       "vrml": ""
     },

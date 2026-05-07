@@ -74,7 +74,7 @@ echo "Schematic:    $SCHEMATIC"
 echo "PCB:          $PCB"
 
 
-OUTPUT_DIR="${BASE:-kicad-artifacts}"
+OUTPUT_DIR="${BASE}-kicad-artifacts"
 
 echo "Output directory: ${OUTPUT_DIR}"
 
@@ -127,30 +127,6 @@ fi
 
 mv "$INNER_PDF" "$OUTPUT_DIR/${PROJECT_NAME}_pcb.pdf"
 rm -rf "$MP_DIR"
-
-###############################################################################
-# High-quality renders
-###############################################################################
-
-# echo "Exporting high-quality top/bottom renders…"
-
-RENDER_WIDTH=1400
-RENDER_HEIGHT=1400
-RENDER_QUALITY="high"
-
-# $KICAD_CLI pcb render "$PCB" \
-#     --side top \
-#     --quality "$RENDER_QUALITY" \
-#     --width "$RENDER_WIDTH" \
-#     --height "$RENDER_HEIGHT" \
-#     --output "$OUTPUT_DIR/${PROJECT_NAME}_render-top.png"
-
-# $KICAD_CLI pcb render "$PCB" \
-#     --side bottom \
-#     --quality "$RENDER_QUALITY" \
-#     --width "$RENDER_WIDTH" \
-#     --height "$RENDER_HEIGHT" \
-#     --output "$OUTPUT_DIR/${PROJECT_NAME}_render-bottom.png"
 
 ###############################################################################
 # Drill + map
@@ -262,6 +238,30 @@ echo "Zipping Gerbers and Drill Files…"
     zip -r "../${PROJECT_NAME}_gerbers.zip" .
 )
 rm -rf "$OUTPUT_DIR/gerbers"
+
+###############################################################################
+# High-quality renders
+###############################################################################
+
+# echo "Exporting high-quality top/bottom renders…"
+
+RENDER_WIDTH=1400
+RENDER_HEIGHT=1400
+RENDER_QUALITY="high"
+
+$KICAD_CLI pcb render "$PCB" \
+    --side top \
+    --quality "$RENDER_QUALITY" \
+    --width "$RENDER_WIDTH" \
+    --height "$RENDER_HEIGHT" \
+    --output "$OUTPUT_DIR/${PROJECT_NAME}_render-top.png"
+
+$KICAD_CLI pcb render "$PCB" \
+    --side bottom \
+    --quality "$RENDER_QUALITY" \
+    --width "$RENDER_WIDTH" \
+    --height "$RENDER_HEIGHT" \
+    --output "$OUTPUT_DIR/${PROJECT_NAME}_render-bottom.png"
 
 ###############################################################################
 # Isometric render

@@ -504,7 +504,7 @@
       "plot": "svg/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "square.glb",
+      "step": "square.stl",
       "svg": "",
       "vrml": ""
     },
