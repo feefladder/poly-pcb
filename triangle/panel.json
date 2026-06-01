@@ -1,0 +1,14 @@
+{
+    "layout": {
+        "alternation": "rowsCols",
+        "hspace": "-23mm",
+        "vspace": "2mm",
+        "rows": "3",
+        "cols": "10"
+    },
+    "tabs": {
+        "vwidth": "1mm",
+        "hwidth": "1mm",
+        "fillet": "1mm"
+    }
+}
