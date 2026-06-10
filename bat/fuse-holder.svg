@@ -1,0 +1,511 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   id="root2"
+   width="795"
+   height="795"
+   viewBox=" 3918.9875 2963.4375 95.125 95.125"
+   preserveAspectRatio="xMinYMin"
+   class="bw-firefox"
+   style="left: 0; top: 0"
+   data-v-25aba29a=""
+   version="1.1"
+   sodipodi:docname="fuse-holder.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview21"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:zoom="1.0213836"
+     inkscape:cx="397.01047"
+     inkscape:cy="397.5"
+     inkscape:window-width="1920"
+     inkscape:window-height="1021"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="g12" />
+  <title
+     id="svg-title"
+     data-v-25aba29a="">Footprint Diagram</title>
+  <desc
+     id="svg-desc"
+     data-v-25aba29a="">
+        This image shows the footprint diagram of 3522-2
+      </desc>
+  <defs
+     id="patterns2"
+     data-v-25aba29a="">
+    <pattern
+       id="gridPattern22"
+       x="0"
+       y="0"
+       width="10"
+       height="10"
+       patternUnits="userSpaceOnUse"
+       data-v-25aba29a="">
+      <path
+         id="gridCell22"
+         d="M10 0V10H0"
+         fill="none"
+         stroke="#CCCCCC"
+         stroke-width="0.11965408805031445"
+         stroke-opacity=".8"
+         data-v-25aba29a="" />
+    </pattern>
+  </defs>
+  <line
+     id="gridOH2"
+     pointer-events="none"
+     x1="3918.9875"
+     y1="180"
+     x2="4014.1125"
+     y2="180"
+     stroke="#ffffff"
+     stroke-width="0.11965408805031445"
+     stroke-opacity="0"
+     data-v-25aba29a="" />
+  <line
+     id="gridOV2"
+     pointer-events="none"
+     x1="180"
+     y1="2963.4375"
+     x2="180"
+     y2="3058.5625"
+     stroke="#ffffff"
+     stroke-width="0.11965408805031445"
+     stroke-opacity="0"
+     data-v-25aba29a="" />
+  <rect
+     x="3918.5"
+     y="2992.2"
+     width="96.099998"
+     height="37.599998"
+     fill="none"
+     stroke="none"
+     id="rect1" />
+  <g
+     c_origin="3966.571,3011"
+     c_para="package`FUSE-TH_3522-2`pre`U?`Contributor`LCSC`link`https://www.mouser.com/datasheet/2/215/3522_2-741335.pdf`3DModel`FUSE-TH_3522-2`"
+     c_transformlist=""
+     id="g12">
+    <g
+       c_partid="part_pad"
+       c_etype="pinpart"
+       c_origin="3994.56,3011"
+       layerid="11"
+       number="4"
+       net=""
+       plated="Y"
+       c_shapetype="group"
+       id="gge106"
+       locked="0"
+       c_rotation="0"
+       c_width="13.7795"
+       c_height="13.7795"
+       title=""
+       c_shape="ELLIPSE"
+       pasteexpansion="0"
+       solderexpansion="0.2">
+      <circle
+         cx="3994.5601"
+         cy="3011"
+         layerid="8"
+         stroke-width="0"
+         c_padid="gge106"
+         id="ellipse1"
+         r="7.0897498" />
+      <circle
+         cx="3994.5601"
+         cy="3011"
+         layerid="7"
+         stroke-width="0"
+         c_padid="gge106"
+         id="ellipse2"
+         r="7.0897498" />
+      <circle
+         cx="3994.5601"
+         cy="3011"
+         stroke-width="0"
+         id="ellipse3"
+         r="6.88975" />
+      <circle
+         c_padhole="1"
+         cx="3994.563"
+         cy="3011"
+         r="5"
+         stroke-width="0"
+         id="circle3" />
+    </g>
+    <g
+       c_partid="part_pad"
+       c_etype="pinpart"
+       c_origin="3974.56,3011"
+       layerid="11"
+       number="3"
+       net=""
+       plated="Y"
+       c_shapetype="group"
+       id="gge109"
+       locked="0"
+       c_rotation="0"
+       c_width="13.7795"
+       c_height="13.7795"
+       title=""
+       c_shape="ELLIPSE"
+       pasteexpansion="0"
+       solderexpansion="0.2">
+      <circle
+         cx="3974.5601"
+         cy="3011"
+         layerid="8"
+         stroke-width="0"
+         c_padid="gge109"
+         id="ellipse4"
+         r="7.0897498" />
+      <circle
+         cx="3974.5601"
+         cy="3011"
+         layerid="7"
+         stroke-width="0"
+         c_padid="gge109"
+         id="ellipse5"
+         r="7.0897498" />
+      <circle
+         cx="3974.5601"
+         cy="3011"
+         stroke-width="0"
+         id="ellipse6"
+         r="6.88975" />
+      <circle
+         c_padhole="1"
+         cx="3974.563"
+         cy="3011"
+         r="5"
+         stroke-width="0"
+         id="circle6" />
+    </g>
+    <g
+       c_partid="part_pad"
+       c_etype="pinpart"
+       c_origin="3958.58,3011"
+       layerid="11"
+       number="2"
+       net=""
+       plated="Y"
+       c_shapetype="group"
+       id="gge112"
+       locked="0"
+       c_rotation="0"
+       c_width="13.7795"
+       c_height="13.7795"
+       title=""
+       c_shape="ELLIPSE"
+       pasteexpansion="0"
+       solderexpansion="0.2">
+      <circle
+         cx="3958.5801"
+         cy="3011"
+         layerid="8"
+         stroke-width="0"
+         c_padid="gge112"
+         id="ellipse7"
+         r="7.0897498" />
+      <circle
+         cx="3958.5801"
+         cy="3011"
+         layerid="7"
+         stroke-width="0"
+         c_padid="gge112"
+         id="ellipse8"
+         r="7.0897498"
+         style="fill:#e01b24" />
+      <circle
+         cx="3958.5801"
+         cy="3011"
+         stroke-width="0"
+         id="ellipse9"
+         r="6.88975"
+         style="fill:#e01b24" />
+      <circle
+         c_padhole="1"
+         cx="3958.5791"
+         cy="3011"
+         r="5"
+         stroke-width="0"
+         id="circle9"
+         style="fill:#c0bfbc" />
+    </g>
+    <g
+       c_partid="part_pad"
+       c_etype="pinpart"
+       c_origin="3938.58,3011"
+       layerid="11"
+       number="1"
+       net=""
+       plated="Y"
+       c_shapetype="group"
+       id="gge115"
+       locked="0"
+       c_rotation="0"
+       c_width="13.7795"
+       c_height="13.7795"
+       title=""
+       c_shape="ELLIPSE"
+       pasteexpansion="0"
+       solderexpansion="0.2">
+      <circle
+         cx="3938.5801"
+         cy="3011"
+         layerid="8"
+         stroke-width="0"
+         c_padid="gge115"
+         id="ellipse10"
+         r="7.0897498" />
+      <circle
+         cx="3938.5801"
+         cy="3011"
+         layerid="7"
+         stroke-width="0"
+         c_padid="gge115"
+         id="ellipse11"
+         r="7.0897498" />
+      <circle
+         cx="3938.5801"
+         cy="3011"
+         stroke-width="0"
+         id="ellipse12"
+         r="6.88975"
+         style="fill:#e01b24" />
+      <circle
+         c_padhole="1"
+         cx="3938.5791"
+         cy="3011"
+         r="5"
+         stroke-width="0"
+         id="circle12"
+         style="fill:#5e5c64" />
+    </g>
+    <polyline
+       points="3928.571 3019.5 3928.571 3002.5 4004.571 3002.5 4004.571 3019.5 3928.571 3019.5"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge328"
+       style="fill:none;stroke:#f8e45c" />
+    <polyline
+       points="3982.071 3015.5 3986.441 3015.5"
+       stroke-width="0.7087"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge322" />
+    <polyline
+       points="3946.071 3015 3950.441 3015"
+       stroke-width="0.7087"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge316" />
+    <path
+       d="m 3986.4787,3015.5396 a 1.1417,1.1417 0 1 1 -0.6669,2.0682"
+       c_shapetype="line"
+       fill="none"
+       stroke-width="0.7087"
+       c_helper_type="arc2"
+       net=""
+       layerid="3"
+       id="gge277" />
+    <path
+       d="m 3982.0711,3015.5001 a 1.1417,1.1417 0 1 0 0.6669,2.0682"
+       c_shapetype="line"
+       fill="none"
+       stroke-width="0.7087"
+       c_helper_type="arc2"
+       net=""
+       layerid="3"
+       id="gge280" />
+    <path
+       d="m 3946.0712,3015.0001 a 1.1417,1.1417 0 1 0 0.6669,2.0682"
+       c_shapetype="line"
+       fill="none"
+       stroke-width="0.7087"
+       c_helper_type="arc2"
+       net=""
+       layerid="3"
+       id="gge283" />
+    <path
+       d="m 3950.4788,3015.0396 a 1.1417,1.1417 0 1 1 -0.6669,2.0682"
+       c_shapetype="line"
+       fill="none"
+       stroke-width="0.7087"
+       c_helper_type="arc2"
+       net=""
+       layerid="3"
+       id="gge286" />
+    <path
+       d="m 3982.1317,3015.8726 a 0.7874,0.7874 0 1 0 0.4601,1.4263 0.35440679,0.35440679 0 1 1 0.4142,0.5752 1.496,1.496 0 1 1 -0.8741,-2.7101 0.35430001,0.35430001 0 1 1 -2e-4,0.7086 z"
+       stroke-width="0"
+       c_shapetype="line"
+       net=""
+       type="solid"
+       layerid="12"
+       id="gge289"
+       locked="0"
+       c_teardrop=""
+       c_targetpad=""
+       c_targetwire=""
+       style="fill:#f6f5f4" />
+    <path
+       d="m 3986.5394,3015.9121 a 0.7874,0.7874 0 1 1 -0.4601,1.4262 0.35438894,0.35438894 0 1 0 -0.414,0.5753 1.496,1.496 0 1 0 0.8741,-2.7102 0.35435,0.35435 0 1 0 0,0.7087 z"
+       stroke-width="0"
+       c_shapetype="line"
+       net=""
+       type="solid"
+       layerid="12"
+       id="gge292"
+       locked="0"
+       c_teardrop=""
+       c_targetpad=""
+       c_targetwire=""
+       style="fill:#f6f5f4" />
+    <path
+       d="m 3982.1319,3015.164 4.37,10e-5 a 0.3543,0.3543 0 0 1 0,0.7084 l -4.3702,1e-4 a 0.35430001,0.35430001 0 0 1 2e-4,-0.7086 z"
+       stroke-width="0"
+       c_shapetype="line"
+       net=""
+       type="solid"
+       layerid="12"
+       id="gge295"
+       locked="0"
+       c_teardrop=""
+       c_targetpad=""
+       c_targetwire=""
+       style="fill:#f6f5f4" />
+    <path
+       d="m 3946.132,3014.664 4.37,10e-5 a 0.3543,0.3543 0 0 1 0,0.7084 l -4.3702,1e-4 a 0.35430001,0.35430001 0 0 1 2e-4,-0.7086 z"
+       stroke-width="0"
+       c_shapetype="line"
+       net=""
+       type="solid"
+       layerid="12"
+       id="gge298"
+       locked="0"
+       c_teardrop=""
+       c_targetpad=""
+       c_targetwire=""
+       style="fill:#ffffff" />
+    <path
+       d="m 3950.5395,3015.4121 a 0.7874,0.7874 0 1 1 -0.4601,1.4262 0.35438894,0.35438894 0 1 0 -0.414,0.5753 1.496,1.496 0 1 0 0.8741,-2.7102 0.35435,0.35435 0 1 0 0,0.7087 z"
+       stroke-width="0"
+       c_shapetype="line"
+       net=""
+       type="solid"
+       layerid="12"
+       id="gge301"
+       locked="0"
+       c_teardrop=""
+       c_targetpad=""
+       c_targetwire=""
+       style="fill:#ffffff" />
+    <path
+       d="m 3946.1318,3015.3726 a 0.7874,0.7874 0 1 0 0.4601,1.4263 0.35440679,0.35440679 0 1 1 0.4142,0.5752 1.496,1.496 0 1 1 -0.8741,-2.7101 0.35430001,0.35430001 0 1 1 -2e-4,0.7086 z"
+       stroke-width="0"
+       c_shapetype="line"
+       net=""
+       type="solid"
+       layerid="12"
+       id="gge304"
+       locked="0"
+       c_teardrop=""
+       c_targetpad=""
+       c_targetwire=""
+       style="fill:#ffffff" />
+  </g>
+  <g
+     id="gNets"
+     pointer-events="none"
+     font-size="1"
+     stroke-width="0.02"
+     data-v-25aba29a=""
+     style="fill:#c0bfbc">
+    <text
+       id="textTemp"
+       dy="0.35em"
+       x="0"
+       y="0"
+       data-v-25aba29a=""
+       style="fill:#c0bfbc" />
+    <text
+       id="text14"
+       dy="0.35em"
+       x="3994.56"
+       y="3011"
+       data-v-25aba29a=""
+       style="fill:#c0bfbc">4</text>
+    <text
+       id="text15"
+       dy="0.35em"
+       x="3974.56"
+       y="3011"
+       data-v-25aba29a=""
+       style="fill:#c0bfbc">3</text>
+    <text
+       id="text16"
+       dy="0.35em"
+       x="3958.58"
+       y="3011"
+       data-v-25aba29a=""
+       style="fill:#c0bfbc">2</text>
+    <text
+       id="text17"
+       dy="0.35em"
+       x="3938.58"
+       y="3011"
+       data-v-25aba29a=""
+       style="fill:#c0bfbc">1</text>
+    <text
+       id="text18"
+       dy="0.35em"
+       x="3994.56"
+       y="3011"
+       data-v-25aba29a=""
+       style="fill:#c0bfbc">4</text>
+    <text
+       id="text19"
+       dy="0.35em"
+       x="3974.56"
+       y="3011"
+       data-v-25aba29a=""
+       style="fill:#c0bfbc">3</text>
+    <text
+       id="text20"
+       dy="0.35em"
+       x="3958.58"
+       y="3011"
+       data-v-25aba29a=""
+       style="fill:#c0bfbc">2</text>
+    <text
+       id="text21"
+       dy="0.35em"
+       x="3938.58"
+       y="3011"
+       data-v-25aba29a=""
+       style="fill:#c0bfbc">1</text>
+  </g>
+</svg>

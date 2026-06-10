@@ -1,8 +1,10 @@
 # Panelization
 
+So most of the pcbs are too small for assembly. The trick is of course to fake a larger pcb by stitching smaller ones together :)
+
 Based on [this hackaday post](https://hackaday.com/2020/04/25/kicad-panelization-made-easy/), the panelization with mouse-bites that I wanted (especially for triangles) was kikit. On debian, they don't like system-installing pip and there was no default repo, but [this here ppa](https://github.com/set-soft/debian) made life easy.
 
-Sometimes it segfaults. Best is:
+Sometimes it segfaults. This is normally when closing the panelizer plugin. Best workaround so far is:
 
 1. open project in kicad project manager
 2. in same folder, terminal e.g. `pcbnew tr-panel`
