@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   role="img"
+   aria-labelledby="svg-title svg-desc"
+   id="root2"
+   width="270"
+   height="270"
+   style="left:0;top:0"
+   viewBox=" 389.0375 282.6875 29.624999999999996 29.624999999999996"
+   preserveAspectRatio="xMinYMin"
+   classname="bw-firefox"
+   version="1.1"
+   sodipodi:docname="ph2.0-footprint.svg"
+   inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview8"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:zoom="3.0074074"
+     inkscape:cx="127.51847"
+     inkscape:cy="138.99015"
+     inkscape:window-width="1920"
+     inkscape:window-height="1021"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="root2" />
+  <title
+     id="svg-title">Footprint Diagram</title>
+  <desc
+     id="svg-desc">This image shows the footprint diagram of PH-2AK</desc>
+  <defs
+     id="patterns2">
+    <pattern
+       id="overseaEdaPcb_gridPattern22"
+       x="0"
+       y="0"
+       width="10"
+       height="10"
+       patternUnits="userSpaceOnUse">
+      <path
+         id="gridCell22"
+         d="M10 0V10H0"
+         fill="none"
+         stroke="#CCCCCC"
+         stroke-width="0.10972222222222221"
+         stroke-opacity=".8" />
+    </pattern>
+  </defs>
+  <line
+     id="gridOH2"
+     pointer-events="none"
+     x1="389.0375"
+     y1="180"
+     x2="418.6625"
+     y2="180"
+     stroke="#ffffff"
+     stroke-width="0.10972222222222221"
+     stroke-opacity="0" />
+  <line
+     id="gridOV2"
+     pointer-events="none"
+     x1="180"
+     y1="282.6875"
+     x2="180"
+     y2="312.3125"
+     stroke="#ffffff"
+     stroke-width="0.10972222222222221"
+     stroke-opacity="0" />
+  <rect
+     x="382.29187"
+     y="278.34595"
+     width="43.700001"
+     height="38.599998"
+     fill="none"
+     stroke="none"
+     id="rect1" />
+  <g
+     c_origin="403.935,300"
+     c_para="pre`CN?`package`CONN-TH_PH-2A`link`https://item.szlcsc.com/9403.html`Contributor`lcsc`3DModel`CONN-TH_PH2.00-LI-2P`"
+     c_transformlist=""
+     id="g6"
+     transform="translate(0.29187192,0.14593596)">
+    <g
+       c_partid="part_pad"
+       c_etype="pinpart"
+       c_origin="400,300"
+       layerid="11"
+       number="1"
+       net=""
+       plated="Y"
+       c_shapetype="group"
+       id="gge2"
+       locked="0"
+       c_rotation="0"
+       c_width="6"
+       c_height="6"
+       title=""
+       c_shape="ELLIPSE"
+       pasteexpansion="0"
+       solderexpansion="0.2">
+      <circle
+         cx="400"
+         cy="300"
+         layerid="8"
+         stroke-width="0"
+         c_padid="gge2"
+         id="ellipse1"
+         r="3.2" />
+      <circle
+         cx="400"
+         cy="300"
+         layerid="7"
+         stroke-width="0"
+         c_padid="gge2"
+         id="ellipse2"
+         r="3.2" />
+      <circle
+         cx="400"
+         cy="300"
+         stroke-width="0"
+         id="ellipse3"
+         r="3" />
+      <circle
+         c_padhole="1"
+         cx="399.99799"
+         cy="300"
+         r="1.8"
+         stroke-width="0"
+         id="circle3" />
+    </g>
+    <g
+       c_partid="part_pad"
+       c_etype="pinpart"
+       c_origin="407.87,300"
+       layerid="11"
+       number="2"
+       net=""
+       plated="Y"
+       c_shapetype="group"
+       id="gge5"
+       locked="0"
+       c_rotation="0"
+       c_width="6"
+       c_height="6"
+       title=""
+       c_shape="ELLIPSE"
+       pasteexpansion="0"
+       solderexpansion="0.2">
+      <circle
+         cx="407.87"
+         cy="300"
+         layerid="8"
+         stroke-width="0"
+         c_padid="gge5"
+         id="ellipse4"
+         r="3.2" />
+      <circle
+         cx="407.87"
+         cy="300"
+         layerid="7"
+         stroke-width="0"
+         c_padid="gge5"
+         id="ellipse5"
+         r="3.2" />
+      <circle
+         cx="407.87"
+         cy="300"
+         stroke-width="0"
+         id="ellipse6"
+         r="3" />
+      <circle
+         c_padhole="1"
+         cx="407.87201"
+         cy="300"
+         r="1.8"
+         stroke-width="0"
+         id="circle6" />
+    </g>
+    <polyline
+       points="413.435 300.253 415.748 300.253"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge210"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="413.435 296.29 415.748 296.29"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge204"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="392.126 300.105 394.435 300.105"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge198"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="392.126 296.179 394.435 296.179"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge192"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="413.435 289.5 413.435 288.189"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge186"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="394.435 289.5 394.435 288.189"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge180"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="406.435 304 413.435 304 413.435 289.5"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge168"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="394.435 289.5 394.435 304 401.257 304"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge162"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="401.257 306.5 401.257 304 406.435 304 406.435 306.19 406.125 306.5"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge150"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="392.126 288.189 392.126 306.5 415.748 306.5 415.748 288.189"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge144"
+       style="stroke:#f8e45c" />
+    <polyline
+       points="392.126 288.189 415.748 288.189"
+       stroke-width="1"
+       c_shapetype="line"
+       stroke-linecap="round"
+       fill="none"
+       layerid="3"
+       net=""
+       id="gge12"
+       style="stroke:#f8e45c" />
+    <path
+       d="M 400.935,306.5 V 304 h 5.5 v 2.5 z"
+       stroke-width="0"
+       c_shapetype="line"
+       net=""
+       type="solid"
+       layerid="12"
+       id="gge213"
+       locked="0"
+       c_teardrop=""
+       c_targetpad=""
+       c_targetwire=""
+       style="stroke:#f8e45c" />
+  </g>
+  <g
+     id="gNets"
+     pointer-events="none"
+     font-size="1"
+     stroke-width="0.02">
+    <text
+       id="textTemp"
+       dy="0.35em"
+       x="0"
+       y="0"
+       style="fill:#c0bfbc" />
+    <text
+       id="text7"
+       dy="0.35em"
+       x="400"
+       y="300"
+       style="fill:#c0bfbc">1</text>
+    <text
+       id="text8"
+       dy="0.35em"
+       x="407.87"
+       y="300"
+       style="fill:#c0bfbc">2</text>
+  </g>
+</svg>

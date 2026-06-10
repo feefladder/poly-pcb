@@ -13,11 +13,12 @@ OUTPUT_DIR="$BOARD_DIR"
 
 
 # Plot SVGs for mask (F.Cu, B.Cu)
-kicad-cli pcb export svg "$BOARD" --output "$OUTPUT_DIR/plot.svg" --layers B.Cu,F.Cu --exclude-drawing-sheet --mode-single
+kicad-cli pcb export svg "$BOARD" --output "$OUTPUT_DIR/plot.svg" --layers F.Cu,B.Cu --exclude-drawing-sheet --mode-single
 kicad-cli pcb export svg "$BOARD" --output "$OUTPUT_DIR/edge.svg" --layers Edge.Cuts --exclude-drawing-sheet --mode-single --drill-shape-opt 0
 
 # Create mask: single offset
 /home/user/git/inkscape/build/install_dir/bin/inkscape --actions="select-all;
+    selection-ungroup;
     selection-ungroup;
     selection-ungroup;
     object-to-path;
@@ -31,6 +32,7 @@ kicad-cli pcb export svg "$BOARD" --output "$OUTPUT_DIR/edge.svg" --layers Edge.
 
 # Create cuts: double offset
 /home/user/git/inkscape/build/install_dir/bin/inkscape --actions="select-all;
+    selection-ungroup;
     selection-ungroup;
     selection-ungroup;
     object-to-path;
