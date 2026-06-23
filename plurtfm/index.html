@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>rusqlite in WASM</title>
+    </head>
+    <body>
+        <script type="module">
+            import init, { run_sqlite_demo } from "./pkg/plurtfm.js";
+            async function run() {
+                await init();
+                run_sqlite_demo();
+            }
+            run();
+        </script>
+    </body>
+</html>
