@@ -1,17 +1,12 @@
-use crate::extract_poly::{Polyhedron, list_polyhedra};
+use crate::extract_poly::{Polyhedron, list_polyhedra, load_polyhedron};
 use log::info;
 use rusqlite::{Connection, Result};
 use three_d::{FrameInputGenerator, SurfaceSettings, WindowedContext, renderer::*};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{
-    HtmlCanvasElement, Request, RequestInit, Response,
-    console::log_1,
-    js_sys::{ArrayBuffer, Uint8Array},
-    window,
-};
-use winit::{event::Event, platform::web::WindowBuilderExtWebSys};
-use winit::{event_loop::EventLoopWindowTarget, window::WindowBuilder};
+use web_sys::{HtmlCanvasElement, Request, RequestInit, Response, js_sys::Uint8Array, window};
+use winit::window::{Window, WindowBuilder};
+use winit::{event::Event, event_loop::EventLoop, platform::web::WindowBuilderExtWebSys};
 
 mod extract_poly;
 
@@ -20,6 +15,19 @@ pub struct Interface {
     connection: Connection,
     backing_bytes: Vec<u8>,
     polyhedron: Option<Polyhedron>,
+    renderer: Renderer,
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlurEvent {
+    PolyhedronChanged(String),
+}
+
+pub struct Renderer {
+    pub event_loop: EventLoop<PlurEvent>,
+    pub window: Window,
+    pub context: WindowedContext,
 }
 
 #[wasm_bindgen]
@@ -45,11 +53,8 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         );
     }
 
-    // check canvas
-    info!("got canvas: {} canvas", canvas.tab_index());
-
     // Initialize renderer from canvas
-    let event_loop = winit::event_loop::EventLoop::new();
+    let event_loop = winit::event_loop::EventLoopBuilder::with_user_event().build();
     let window_builder = WindowBuilder::new().with_canvas(Some(canvas));
     let window = window_builder.build(&event_loop).unwrap();
     let context = WindowedContext::from_winit_window(&window, SurfaceSettings::default()).unwrap();
@@ -69,48 +74,71 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
     // Create model
     let mut model = Gm::new(
         Mesh::new(&context, &CpuMesh::cube()),
-        ColorMaterial {
-            color: Srgba::GREEN,
-            ..Default::default()
-        },
+        PhysicalMaterial::new(&context, &CpuMaterial::default()),
     );
     model.set_animation(|time| Mat4::from_angle_y(radians(time * 0.0005)));
 
+    // add light
+    let ambient = AmbientLight::new(&context, 0.2, Srgba::RED);
+    let point = PointLight::new(
+        &context,
+        0.2,
+        Srgba::BLUE,
+        vec3(10.0, 10.0, 10.0),
+        Attenuation::default(),
+    );
+    event_loop
+        .create_proxy()
+        .send_event(PlurEvent::PolyhedronChanged(
+            "tridiminished icosahedron".to_string(),
+        ));
+
+    let iface = Interface {
+        connection,
+        backing_bytes: db_bytes,
+        polyhedron: None,
+        renderer: Renderer {
+            event_loop,
+            window,
+            context,
+        },
+    };
     // Event loop
     let mut frame_input_generator = FrameInputGenerator::from_winit_window(&window);
-    event_loop.run(move |event, event_loop, control_flow| match event {
-        Event::RedrawRequested(window_id) => {
-            let mut frame_input = frame_input_generator.generate(&context);
+    iface
+        .renderer
+        .event_loop
+        .run(move |event, event_loop, control_flow| match event {
+            Event::RedrawRequested(window_id) => {
+                let mut frame_input = frame_input_generator.generate(&context);
 
-            control.handle_events(&mut camera, &mut frame_input.events);
-            camera.set_viewport(frame_input.viewport);
-            model.animate(frame_input.accumulated_time as f32);
-            frame_input
-                .screen()
-                .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
-                .render(&camera, &model, &[]);
+                control.handle_events(&mut camera, &mut frame_input.events);
+                camera.set_viewport(frame_input.viewport);
+                model.animate(frame_input.accumulated_time as f32);
+                frame_input
+                    .screen()
+                    .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
+                    .render(&camera, &model, &[&ambient, &point]);
 
-            context.swap_buffers().unwrap();
-            window.request_redraw();
-        }
-        winit::event::Event::WindowEvent { ref event, .. } => {
-            frame_input_generator.handle_winit_window_event(event);
-            match event {
-                winit::event::WindowEvent::Resized(physical_size) => {
-                    context.resize(*physical_size);
-                }
-                winit::event::WindowEvent::CloseRequested => {}
-                _ => (),
+                context.swap_buffers().unwrap();
+                window.request_redraw();
             }
-        }
-        _ => {}
-    });
+            Event::WindowEvent { ref event, .. } => {
+                frame_input_generator.handle_winit_window_event(event);
+                match event {
+                    winit::event::WindowEvent::Resized(physical_size) => {
+                        context.resize(*physical_size);
+                    }
+                    winit::event::WindowEvent::CloseRequested => {}
+                    _ => (),
+                }
+            }
+            Event::UserEvent(PlurEvent::PolyhedronChanged(to)) => {
+                info!("polyhedron changed to {to:?}");
+            }
 
-    // Ok(Interface {
-    //     connection,
-    //     backing_bytes: db_bytes,
-    //     polyhedron: None,
-    // })
+            _ => {}
+        });
 }
 
 #[wasm_bindgen]
