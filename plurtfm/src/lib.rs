@@ -76,6 +76,8 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         0.1,
         10.0,
     );
+    let mut control = OrbitControl::new(camera.target(), 1.0, 1000.0);
+
     // Create model
     let mut model = Gm::new(
         Mesh::new(&context, &CpuMesh::cube()),
@@ -114,6 +116,15 @@ impl Interface {
     }
 
     pub fn render(&mut self) {
+        let width = self.canvas.client_width() as u32;
+        let height = self.canvas.client_height() as u32;
+
+        self.canvas.set_width(width);
+        self.canvas.set_height(height);
+
+        self.scene
+            .camera
+            .set_viewport(Viewport::new_at_origo(width, height));
         // actually draw something?
         let screen = RenderTarget::screen(&self.context, width, height);
         screen
