@@ -1,12 +1,12 @@
-use crate::extract_poly::{Polyhedron, list_polyhedra, load_polyhedron};
+use std::sync::Arc;
+
+use crate::extract_poly::{Polyhedron, list_polyhedra};
 use log::info;
 use rusqlite::{Connection, Result};
-use three_d::{FrameInputGenerator, SurfaceSettings, WindowedContext, renderer::*};
+use three_d::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{HtmlCanvasElement, Request, RequestInit, Response, js_sys::Uint8Array, window};
-use winit::window::{Window, WindowBuilder};
-use winit::{event::Event, event_loop::EventLoop, platform::web::WindowBuilderExtWebSys};
 
 mod extract_poly;
 
@@ -14,8 +14,16 @@ mod extract_poly;
 pub struct Interface {
     connection: Connection,
     backing_bytes: Vec<u8>,
-    polyhedron: Option<Polyhedron>,
-    renderer: Renderer,
+    polyhedron: Polyhedron,
+    scene: Scene,
+    canvas: HtmlCanvasElement,
+    context: Context,
+}
+
+pub struct Scene {
+    camera: Camera,
+    models: Vec<Gm<Mesh, PhysicalMaterial>>,
+    lights: Vec<Box<dyn Light>>,
 }
 
 #[wasm_bindgen]
@@ -24,18 +32,13 @@ pub enum PlurEvent {
     PolyhedronChanged(String),
 }
 
-pub struct Renderer {
-    pub event_loop: EventLoop<PlurEvent>,
-    pub window: Window,
-    pub context: WindowedContext,
-}
-
 #[wasm_bindgen]
 pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue> {
     // Set up panic hook for better error messages in the browser
     console_error_panic_hook::set_once();
     console_log::init_with_level(log::Level::Trace).unwrap();
 
+    info!("logging works");
     // Get the polydb and load it
     let db_bytes = fetch_db("assets/polydb.sqlite3").await?;
     // Open an in-memory database
@@ -53,24 +56,26 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         );
     }
 
-    // Initialize renderer from canvas
-    let event_loop = winit::event_loop::EventLoopBuilder::with_user_event().build();
-    let window_builder = WindowBuilder::new().with_canvas(Some(canvas));
-    let window = window_builder.build(&event_loop).unwrap();
-    let context = WindowedContext::from_winit_window(&window, SurfaceSettings::default()).unwrap();
+    let webgl_context = canvas
+        .get_context("webgl2")?
+        .unwrap()
+        .dyn_into::<web_sys::WebGl2RenderingContext>()?;
+
+    let context = three_d::Context::from_gl_context(Arc::new(
+        three_d::context::Context::from_webgl2_context(webgl_context),
+    ))
+    .map_err(|e| e.to_string())?;
 
     // Create camera
-    let mut camera = Camera::new_perspective(
+    let camera = Camera::new_perspective(
         Viewport::new_at_origo(1, 1),
-        vec3(0.0, 2.0, 4.0),
+        vec3(0.0, 4.0, 8.0),
         vec3(0.0, 0.0, 0.0),
         vec3(0.0, 1.0, 0.0),
         degrees(45.0),
         0.1,
         10.0,
     );
-    let mut control = OrbitControl::new(camera.target(), 1.0, 100.0);
-
     // Create model
     let mut model = Gm::new(
         Mesh::new(&context, &CpuMesh::cube()),
@@ -87,64 +92,57 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         vec3(10.0, 10.0, 10.0),
         Attenuation::default(),
     );
-    event_loop
-        .create_proxy()
-        .send_event(PlurEvent::PolyhedronChanged(
-            "tridiminished icosahedron".to_string(),
-        ));
-
     let iface = Interface {
-        connection,
         backing_bytes: db_bytes,
-        polyhedron: None,
-        renderer: Renderer {
-            event_loop,
-            window,
-            context,
+        polyhedron: Polyhedron::load(&connection, "truncated cube").map_err(|e| e.to_string())?,
+        connection,
+        scene: Scene {
+            camera,
+            models: vec![model],
+            lights: vec![Box::new(ambient), Box::new(point)],
         },
+        canvas,
+        context,
     };
-    // Event loop
-    let mut frame_input_generator = FrameInputGenerator::from_winit_window(&window);
-    iface
-        .renderer
-        .event_loop
-        .run(move |event, event_loop, control_flow| match event {
-            Event::RedrawRequested(window_id) => {
-                let mut frame_input = frame_input_generator.generate(&context);
-
-                control.handle_events(&mut camera, &mut frame_input.events);
-                camera.set_viewport(frame_input.viewport);
-                model.animate(frame_input.accumulated_time as f32);
-                frame_input
-                    .screen()
-                    .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
-                    .render(&camera, &model, &[&ambient, &point]);
-
-                context.swap_buffers().unwrap();
-                window.request_redraw();
-            }
-            Event::WindowEvent { ref event, .. } => {
-                frame_input_generator.handle_winit_window_event(event);
-                match event {
-                    winit::event::WindowEvent::Resized(physical_size) => {
-                        context.resize(*physical_size);
-                    }
-                    winit::event::WindowEvent::CloseRequested => {}
-                    _ => (),
-                }
-            }
-            Event::UserEvent(PlurEvent::PolyhedronChanged(to)) => {
-                info!("polyhedron changed to {to:?}");
-            }
-
-            _ => {}
-        });
+    Ok(iface)
 }
 
 #[wasm_bindgen]
 impl Interface {
     pub fn polyhedron_names(&mut self) -> Result<Vec<String>, JsValue> {
         list_polyhedra(&self.connection).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    pub fn render(&mut self) {
+        // actually draw something?
+        let screen = RenderTarget::screen(&self.context, width, height);
+        screen
+            .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
+            .render(
+                &self.scene.camera,
+                &self.scene.models,
+                &self
+                    .scene
+                    .lights
+                    .iter()
+                    .map(|l| l.as_ref())
+                    .collect::<Vec<_>>(),
+            );
+    }
+
+    pub fn set_polyhedron(&mut self, poly: String) -> Result<(), JsError> {
+        info!("poly request for {poly}");
+        let new_poly = Polyhedron::load(&self.connection, &poly)?;
+        let mut new_mesh = new_poly.cpu_mesh();
+        new_mesh.compute_normals();
+        let new_model = Gm::new(
+            Mesh::new(&self.context, &new_mesh),
+            self.scene.models[0].material.clone(),
+        );
+        self.scene.models.clear();
+        self.scene.models.push(new_model);
+        self.render();
+        Ok(())
     }
 }
 
