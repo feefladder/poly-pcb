@@ -4,7 +4,7 @@ use three_d::*;
 
 pub struct Polyhedron {
     pub name: String,
-    pub vertices: Vec<[f32; 3]>,
+    pub vertices: Vec<Vec3>,
     pub faces: Vec<Vec<u32>>,
 }
 
@@ -46,7 +46,7 @@ impl Polyhedron {
         for (idx, row) in rows.enumerate() {
             let (vertex_id, x, y, z) = row?;
             vertex_map.insert(vertex_id, idx as u32);
-            vertices.push([x, y, z]);
+            vertices.push(vec3(x, y, z));
         }
 
         let mut stmt = conn.prepare(
