@@ -22,7 +22,8 @@ pub struct Interface {
 
 pub struct Scene {
     camera: Camera,
-    models: Vec<Gm<Mesh, PhysicalMaterial>>,
+    model: Gm<Mesh, PhysicalMaterial>,
+    faces: Gm<InstancedMesh, PhysicalMaterial>,
     lights: Vec<Box<dyn Light>>,
 }
 
@@ -40,7 +41,7 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
 
     info!("logging works");
     // Get the polydb and load it
-    let db_bytes = fetch_db("assets/polydb.sqlite3").await?;
+    let db_bytes = fetch("assets/polydb.sqlite3").await?;
     // Open an in-memory database
     let connection = Connection::open(":memory:").map_err(|e| ErrorShim::from(e))?;
     let len = db_bytes.len() as i64;
@@ -76,14 +77,24 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         0.1,
         10.0,
     );
-    let mut control = OrbitControl::new(camera.target(), 1.0, 1000.0);
-
     // Create model
     let mut model = Gm::new(
         Mesh::new(&context, &CpuMesh::cube()),
         PhysicalMaterial::new(&context, &CpuMaterial::default()),
     );
-    model.set_animation(|time| Mat4::from_angle_y(radians(time * 0.0005)));
+
+    // glb is big deps, stl smol
+    // http is huge deps, bc we don't understand that fetch api exists?
+    let key = "assets/3-01.stl";
+    let stl_bytes = fetch(key).await?;
+    let mut loaded: CpuMesh =
+        three_d_asset::io::deserialize(key, stl_bytes).map_err(|e| e.to_string())?;
+
+    loaded.transform(Mat4::from_scale(0.1));
+    model = Gm::new(
+        Mesh::new(&context, &loaded),
+        PhysicalMaterial::new(&context, &CpuMaterial::default()),
+    );
 
     // add light
     let ambient = AmbientLight::new(&context, 0.2, Srgba::RED);
@@ -94,18 +105,21 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         vec3(10.0, 10.0, 10.0),
         Attenuation::default(),
     );
+    let polyhedron = Polyhedron::load(&connection, "truncated cube").map_err(|e| e.to_string())?;
     let iface = Interface {
         backing_bytes: db_bytes,
-        polyhedron: Polyhedron::load(&connection, "truncated cube").map_err(|e| e.to_string())?,
         connection,
         scene: Scene {
             camera,
-            models: vec![model],
+            model: model,
             lights: vec![Box::new(ambient), Box::new(point)],
+            faces: face_instances(&polyhedron, &context),
         },
+        polyhedron,
         canvas,
         context,
     };
+
     Ok(iface)
 }
 
@@ -131,7 +145,7 @@ impl Interface {
             .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
             .render(
                 &self.scene.camera,
-                &self.scene.models,
+                self.scene.model.into_iter().chain(&self.scene.faces),
                 &self
                     .scene
                     .lights
@@ -144,22 +158,70 @@ impl Interface {
     pub fn set_polyhedron(&mut self, poly: String) -> Result<(), JsError> {
         info!("poly request for {poly}");
         let new_poly = Polyhedron::load(&self.connection, &poly)?;
+
         let mut new_mesh = new_poly.cpu_mesh();
         new_mesh.compute_normals();
         let new_model = Gm::new(
             Mesh::new(&self.context, &new_mesh),
-            self.scene.models[0].material.clone(),
+            self.scene.model.material.clone(),
         );
-        self.scene.models.clear();
-        self.scene.models.push(new_model);
+        self.scene.model = new_model;
+        self.polyhedron = new_poly;
+        self.add_mesh_to_faces()?;
+        self.render();
+        Ok(())
+    }
+
+    pub fn add_mesh_to_faces(&mut self) -> Result<(), JsError> {
+        let instanced_mesh = face_instances(&self.polyhedron, &self.context);
+        self.scene.faces = instanced_mesh;
         self.render();
         Ok(())
     }
 }
 
+fn face_instances(
+    polyhedron: &Polyhedron,
+    context: &Context,
+) -> Gm<InstancedMesh, PhysicalMaterial> {
+    // so we'll need a library of face-meshes at some point and then use instancing I think, so first start with a spehere and instance that
+    // (from picking demo)
+    // this is ugly, but we just create a sphere here and now, in stead of loading it from self
+    let mut sphere = CpuMesh::sphere(8);
+    sphere.transform(Mat4::from_scale(0.1)).unwrap();
+    let transformations: Vec<_> = polyhedron
+        .faces
+        .iter()
+        .map(|face| {
+            let centroid: Vec3 = face
+                .iter()
+                .map(|idx| polyhedron.vertices[*idx as usize])
+                .sum::<Vec3>()
+                / face.len() as f32;
+            Mat4::from_translation(centroid)
+        })
+        .collect();
+    let no_instances = transformations.len();
+    let instances = Instances {
+        transformations,
+        colors: Some(vec![Srgba::GREEN; no_instances]),
+        ..Default::default()
+    };
+    Gm::new(
+        InstancedMesh::new(&context, &instances, &sphere),
+        PhysicalMaterial::new_transparent(
+            &context,
+            &CpuMaterial {
+                albedo: Srgba::new(255, 255, 0, 255),
+                ..Default::default()
+            },
+        ),
+    )
+}
+
 // need to fetch db from site
 // use bare api: https://rustwasm.app/en/learn/fetch-api
-async fn fetch_db(path: &str) -> Result<Vec<u8>, JsValue> {
+async fn fetch(path: &str) -> Result<Vec<u8>, JsValue> {
     let opts = RequestInit::new();
     opts.set_method("GET");
 

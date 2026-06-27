@@ -280,6 +280,7 @@ dependencies = [
  "rusqlite",
  "sqlite-wasm-rs",
  "three-d",
+ "three-d-asset",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -374,6 +375,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "stl_io"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "567641995c51a3b8befddb13e1826187bcf7eb7ca8d13746bfd1cc5a22e89fa8"
+
+[[package]]
 name = "syn"
 version = "2.0.118"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -426,6 +433,7 @@ checksum = "cd4e4e9bc05e4010efbaa0a0296870b2d28102171deffbf69de7b305cff2d47a"
 dependencies = [
  "cgmath",
  "half",
+ "stl_io",
  "thiserror",
  "web-sys",
 ]

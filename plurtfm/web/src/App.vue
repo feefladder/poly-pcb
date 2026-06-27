@@ -17,8 +17,6 @@ onMounted(async () => {
     iface = await wasm.init_iface(canvas.value);
 
     polyhedra.value = iface.polyhedron_names();
-
-    selected.value = polyhedra.value[0];
     iface.render();
 });
 
