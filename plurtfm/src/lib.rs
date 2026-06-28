@@ -132,7 +132,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
     // );
 
     // add light
-    // let ambient = AmbientLight::new(&context, 0.2, Srgba::new_opaque(249, 240, 107));
+    let ambient = AmbientLight::new(&context, 0.02, Srgba::new_opaque(249, 240, 107));
     let point = PointLight::new(
         &context,
         0.2,
@@ -148,7 +148,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         scene: Scene {
             camera,
             model: model,
-            lights: vec![Box::new(point)],
+            lights: vec![Box::new(point), Box::new(ambient)],
             faces: Vec::new(),
         },
         polyhedron,
@@ -350,9 +350,12 @@ impl Interface {
 
 impl Interface {
     pub fn missing_variants(&self) -> Vec<Vec<usize>> {
-        let mut missing_variants = vec![Vec::new(); 11];
+        let mut missing_variants = vec![Vec::new(); self.pcbs.len()];
         for (i, face) in self.polyhedron.faces.iter().enumerate() {
             let n = face.len();
+            if n >= self.pcbs.len() {
+                continue;
+            }
             let var = self.face_variant_mapping[i];
             // yes vector search, but probs small container, so this better than hashset
             if self.pcbs[n][var].is_none() && !missing_variants[n].contains(&var) {
@@ -389,7 +392,7 @@ impl Interface {
                     // TODO: fix panic on not present pcb
                     InstancedMesh::new(&self.context, &instances, mesh.as_ref().unwrap()),
                     PhysicalMaterial {
-                        albedo: Srgba::new_opaque(255, 255, 0),
+                        albedo: Srgba::new_opaque(255, 255, 127),
                         ..Default::default()
                     },
                 );
