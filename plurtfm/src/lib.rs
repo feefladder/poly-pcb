@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::extract_poly::Polyhedron;
+use crate::polyhedron::Polyhedron;
 use log::{debug, info};
 use rusqlite::{Connection, Result};
 use three_d::*;
@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{HtmlCanvasElement, Request, RequestInit, Response, js_sys::Uint8Array, window};
 
-mod extract_poly;
+mod polyhedron;
 
 /// The interface is the entrypoint for wasm
 ///
@@ -109,7 +109,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         100.0,
     );
     // Create model
-    let mut model = Gm::new(
+    let model = Gm::new(
         Mesh::new(&context, &CpuMesh::cube()),
         PhysicalMaterial::new(&context, &CpuMaterial::default()),
     );
@@ -129,7 +129,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
     // );
 
     // add light
-    let ambient = AmbientLight::new(&context, 0.2, Srgba::RED);
+    let ambient = AmbientLight::new(&context, 0.2, Srgba::new_opaque(249, 240, 107));
     let point = PointLight::new(
         &context,
         0.2,
@@ -231,7 +231,28 @@ impl Interface {
         debug!("{:?}", &data[..16.min(data.len())]);
         debug!("loading stl {}", String::from_utf8_lossy(&data[..10]));
         let mut mesh: CpuMesh = three_d_asset::io::deserialize(key, data)?;
+
         mesh.transform(Mat4::from_scale(2.0 / 50.0))?;
+        if n_gon == 3 {
+            // kicad exports the center as like the board origin which is calculated from bounding box
+            // so we transform it on y-axis by 1/3-1/2
+            mesh.transform(Mat4::from_translation(vec3(
+                0.0,
+                // size  diff           height-side
+                2.0 * 1.0 / 6.0 * 3.0f32.sqrt() / 2.0,
+                0.0,
+            )))?;
+        } else if n_gon == 5 {
+            // same story here, but ofc with pentagon it's more difficult eh
+            mesh.transform(Mat4::from_translation(vec3(
+                0.0,
+                // https://en.wikipedia.org/wiki/Pentagon
+                // side length * (og - correct)
+                2.0 * ((5.0 + 2.0 * 5.0f32.sqrt()).sqrt() / 4.0
+                    - 1.0 / (2.0 * (5.0 - 20.0f32.sqrt()).sqrt())),
+                0.0,
+            )))?;
+        }
         self.pcbs[n_gon][variant] = Some(mesh);
         info!("successfully loaded stl for {key}");
         // side-effects, yay!
