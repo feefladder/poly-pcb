@@ -20,11 +20,11 @@ onMounted(async () => {
     pcbLoader.value = new PcbLoader(iface);
 
     polyhedra.value = iface.polyhedron_names();
-    let tr_01 = await loadAsset("3-01.stl");
-    iface.add_pcb(3, 0, tr_01!);
     iface.set_polyhedron("tetrahedron");
     iface.on_resize();
     iface.render();
+
+    pcbLoader.value!.requestMany([[], [], [], [0]]);
 });
 
 watch(selected, async (name) => {
