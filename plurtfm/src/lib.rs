@@ -10,6 +10,9 @@ use web_sys::{HtmlCanvasElement, Request, RequestInit, Response, js_sys::Uint8Ar
 
 mod extract_poly;
 
+/// The interface is the entrypoint for wasm
+///
+/// it mainly handles events and keeps state
 #[wasm_bindgen]
 pub struct Interface {
     connection: Connection,
@@ -18,8 +21,32 @@ pub struct Interface {
     scene: Scene,
     canvas: HtmlCanvasElement,
     context: Context,
+    /// different stls per polygon, this is template
+    /// need also store somewhere their transforms?
+    /// maximum is 10-gon, want nice indexing: face_meshes[3] = triangles
+    /// I don't care about unused first 3 units and 7 and 9
+    face_meshes: [Vec<CpuMesh>; 11],
+    /// I guess also transform per stl
+    /// so these are kinda...
+    /// nah, I think re-calculate them is enough?
+    /// or no, bc need actually keep state
+    /// but they are generated from polyhedron
+    /// organized like:
+    /// // triangle -> version -> instances
+    /// transforms[3][0]
+    /// maybe need better organization with some hashmap somewhere or something to go
+    /// face -> stl
+    /// for make easy change stl for face
+    ///
+    /// also question is how do rotation?
+    ///
+    /// but for instance calculating, e.g. how is rendered, below is best
+    transforms: [Vec<Vec<Mat4>>; 11],
 }
 
+/// The scene is well, the scene
+///
+/// camera, lights, model and faces
 pub struct Scene {
     camera: Camera,
     model: Gm<Mesh, PhysicalMaterial>,
@@ -90,7 +117,8 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
     let mut loaded: CpuMesh =
         three_d_asset::io::deserialize(key, stl_bytes).map_err(|e| e.to_string())?;
 
-    loaded.transform(Mat4::from_scale(0.1));
+    loaded.transform(Mat4::from_translation(vec3(0.0, 3.0f32.sqrt() / 2.0, 0.0)));
+    loaded.transform(Mat4::from_scale(2.0 / 50.0));
     model = Gm::new(
         Mesh::new(&context, &loaded),
         PhysicalMaterial::new(&context, &CpuMaterial::default()),
@@ -106,6 +134,8 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         Attenuation::default(),
     );
     let polyhedron = Polyhedron::load(&connection, "truncated cube").map_err(|e| e.to_string())?;
+    let mut face_meshes: [Vec<CpuMesh>; 11] = Default::default();
+    face_meshes[3].push(loaded);
     let iface = Interface {
         backing_bytes: db_bytes,
         connection,
@@ -118,6 +148,9 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         polyhedron,
         canvas,
         context,
+        // https://stackoverflow.com/a/54134142/14681457
+        face_meshes,
+        transforms: Default::default(),
     };
 
     Ok(iface)
@@ -145,7 +178,7 @@ impl Interface {
             .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
             .render(
                 &self.scene.camera,
-                self.scene.model.into_iter().chain(&self.scene.faces),
+                &self.scene.faces, //self.scene.model.into_iter().chain(&self.scene.faces),
                 &self
                     .scene
                     .lights
@@ -173,8 +206,24 @@ impl Interface {
     }
 
     pub fn add_mesh_to_faces(&mut self) -> Result<(), JsError> {
-        let instanced_mesh = face_instances(&self.polyhedron, &self.context);
-        self.scene.faces = instanced_mesh;
+        // let instances = face_instances(&self.polyhedron, &self.context);
+        // just put triangle on every face
+        let instances = Instances {
+            transformations: self
+                .polyhedron
+                .face_transforms
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| self.polyhedron.faces[*i].len() == 3)
+                .map(|(_, tr)| tr / 2.5)
+                .collect(),
+            ..Default::default()
+        };
+        let instanced_gm = Gm::new(
+            InstancedMesh::new(&self.context, &instances, &self.face_meshes[3][0]),
+            PhysicalMaterial::default(),
+        );
+        self.scene.faces = instanced_gm;
         self.render();
         Ok(())
     }
@@ -189,18 +238,18 @@ fn face_instances(
     // this is ugly, but we just create a sphere here and now, in stead of loading it from self
     let mut sphere = CpuMesh::sphere(8);
     sphere.transform(Mat4::from_scale(0.1)).unwrap();
-    let transformations: Vec<_> = polyhedron
-        .faces
-        .iter()
-        .map(|face| {
-            let centroid: Vec3 = face
-                .iter()
-                .map(|idx| polyhedron.vertices[*idx as usize])
-                .sum::<Vec3>()
-                / face.len() as f32;
-            Mat4::from_translation(centroid)
-        })
-        .collect();
+    let transformations: Vec<_> = polyhedron.face_transforms.to_vec();
+    // .faces
+    // .iter()
+    // .map(|face| {
+    //     let centroid: Vec3 = face
+    //         .iter()
+    //         .map(|idx| polyhedron.vertices[*idx as usize])
+    //         .sum::<Vec3>()
+    //         / face.len() as f32;
+    //     Mat4::from_translation(centroid)
+    // })
+    // .collect();
     let no_instances = transformations.len();
     let instances = Instances {
         transformations,
