@@ -51,7 +51,13 @@ watch(selected, async (name) => {
         </aside>
 
         <main class="viewport-container">
-            <canvas ref="canvas"></canvas>
+            <canvas
+                ref="canvas"
+                tabindex="0"
+                @keydown="iface.on_key"
+                @click="iface.on_click"
+                @next_polyhedron="selected = $event.detail"
+            ></canvas>
         </main>
     </div>
 </template>

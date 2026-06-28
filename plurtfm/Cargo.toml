@@ -20,9 +20,15 @@ wasm-bindgen = "0.2.125"
 wasm-bindgen-futures = "0.4.75"
 web-sys = {version = "0.3.102", features = [
     "Window",
-    "Request",
-    "RequestInit",
-    "RequestMode",
-    "Response",
-    "Headers",
+    # need for sending rust-js event
+    "Event",
+    "EventTarget",
+    # need for sending custom rust-js events
+    "CustomEvent",
+    "CustomEventInit",
+    # for reading key presses
+    "KeyboardEvent",
+    # for calculating canvas-space coordinates
+    "DomRect","Element",
+    "MouseEvent",
 ]}

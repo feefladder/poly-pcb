@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::Index, sync::Arc};
 
 use crate::polyhedron::Polyhedron;
 use log::{debug, info};
@@ -6,7 +6,9 @@ use rusqlite::{Connection, Result};
 use three_d::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{HtmlCanvasElement, Request, RequestInit, Response, js_sys::Uint8Array, window};
+use web_sys::{
+    CustomEventInit, HtmlCanvasElement, KeyboardEvent, MouseEvent, js_sys::Uint8Array, window,
+};
 
 mod polyhedron;
 
@@ -16,6 +18,7 @@ mod polyhedron;
 #[wasm_bindgen]
 pub struct Interface {
     connection: Connection,
+    #[allow(unused)] // need to keep alive backing memory during connection
     backing_bytes: Vec<u8>,
     polyhedron: Polyhedron,
     scene: Scene,
@@ -26,24 +29,24 @@ pub struct Interface {
     /// maximum is 10-gon, want nice indexing: face_meshes[3] = triangles
     /// I don't care about unused first 3 units and 7 and 9
     pcbs: [Vec<Option<CpuMesh>>; 11],
-    /// I guess also transform per stl
-    /// so these are kinda...
-    /// nah, I think re-calculate them is enough?
-    /// or no, bc need actually keep state
-    /// but they are generated from polyhedron
-    /// organized like:
-    /// // triangle -> version -> instances
-    /// transforms[3][0]
-    /// maybe need better organization with some hashmap somewhere or something to go
-    /// face -> stl
-    /// for make easy change stl for face
-    ///
-    /// also question is how do rotation?
-    ///
-    /// but for instance calculating, e.g. how is rendered, below is best
-    pcb_transforms: [Vec<Vec<Mat4>>; 11],
-    // /// Mapping from polygon face index -> pcb variant
-    // face_variant_mapping: Vec<usize>,
+    // /// I guess also transform per stl
+    // /// so these are kinda...
+    // /// nah, I think re-calculate them is enough?
+    // /// or no, bc need actually keep state
+    // /// but they are generated from polyhedron
+    // /// organized like:
+    // /// // triangle -> version -> instances
+    // /// transforms[3][0]
+    // /// maybe need better organization with some hashmap somewhere or something to go
+    // /// face -> stl
+    // /// for make easy change stl for face
+    // ///
+    // /// also question is how do rotation?
+    // ///
+    // /// but for instance calculating, e.g. how is rendered, below is best
+    // pcb_transforms: [Vec<Vec<Mat4>>; 11],
+    /// Mapping from polygon face index -> pcb variant
+    face_variant_mapping: Vec<usize>,
 }
 
 /// The scene is well, the scene
@@ -129,12 +132,12 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
     // );
 
     // add light
-    let ambient = AmbientLight::new(&context, 0.2, Srgba::new_opaque(249, 240, 107));
+    // let ambient = AmbientLight::new(&context, 0.2, Srgba::new_opaque(249, 240, 107));
     let point = PointLight::new(
         &context,
         0.2,
-        Srgba::BLUE,
-        vec3(10.0, 10.0, 10.0),
+        Srgba::WHITE,
+        vec3(-10.0, -10.0, 10.0),
         Attenuation::default(),
     );
     let polyhedron = Polyhedron::load(&connection, "truncated cube").map_err(|e| e.to_string())?;
@@ -145,15 +148,16 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         scene: Scene {
             camera,
             model: model,
-            lights: vec![Box::new(ambient), Box::new(point)],
-            faces: vec![face_instances(&polyhedron, &context)],
+            lights: vec![Box::new(point)],
+            faces: Vec::new(),
         },
         polyhedron,
         canvas,
         context,
         // https://stackoverflow.com/a/54134142/14681457
         pcbs: std::array::from_fn(|_| vec![None; 4]),
-        pcb_transforms: Default::default(),
+        // only populated when there is something
+        face_variant_mapping: Vec::new(),
     };
 
     Ok(iface)
@@ -161,6 +165,87 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
 
 #[wasm_bindgen]
 impl Interface {
+    pub fn on_key(&mut self, key_event: KeyboardEvent) -> Result<(), JsError> {
+        info!("on_key called");
+        match key_event.key().as_str() {
+            "ArrowLeft" => {
+                self.scene
+                    .camera
+                    .rotate_around(Vec3::zero(), std::f32::consts::FRAC_PI_8, 0.0);
+            }
+            "ArrowRight" => {
+                self.scene
+                    .camera
+                    .rotate_around(Vec3::zero(), -std::f32::consts::FRAC_PI_8, 0.0);
+            }
+            "ArrowUp" => {
+                self.scene
+                    .camera
+                    .rotate_around(Vec3::zero(), 0.0, std::f32::consts::FRAC_PI_8);
+            }
+            "ArrowDown" => {
+                self.scene
+                    .camera
+                    .rotate_around(Vec3::zero(), 0.0, -std::f32::consts::FRAC_PI_8);
+            }
+            "Tab" | " " => {
+                let polyhedra = self.polyhedron_names()?;
+                if let Some(i) = polyhedra.iter().position(|n| **n == self.polyhedron.name) {
+                    let next_polyhedron = &polyhedra[(i + 1) % polyhedra.len()];
+                    let e_detail = CustomEventInit::new();
+                    e_detail.set_detail(&next_polyhedron.into());
+                    self.canvas
+                        .dispatch_event(
+                            &web_sys::CustomEvent::new_with_event_init_dict(
+                                "next_polyhedron",
+                                &e_detail,
+                            )
+                            .unwrap(),
+                        )
+                        .unwrap();
+                }
+            }
+            k => info!("pressed {k:?}"),
+        }
+        self.render();
+        Ok(())
+    }
+
+    pub fn on_click(&mut self, event: MouseEvent) -> Result<(), JsError> {
+        info!("mouse event happened: {event:?}");
+        let rect = self.canvas.get_bounding_client_rect();
+
+        // is f64 bc css pixels are fake, scale by canvas size to get back to physics the gpu understands
+        let x = ((event.client_x() as f64 - rect.left()) * self.canvas.width() as f64
+            / rect.width()) as f32;
+
+        let y = ((event.client_y() as f64 - rect.top()) * self.canvas.height() as f64
+            / rect.height()) as f32;
+
+        if let Some(p) = pick(
+            &self.context,
+            &self.scene.camera,
+            (x, y),
+            self.scene.faces.iter().flat_map(|f| f.into_iter()),
+            Cull::Back,
+        )? {
+            info!(
+                "clicked on face with geometry id {}, instance id {}",
+                p.geometry_id, p.instance_id
+            );
+        }
+        info!(
+            "at ({:?},{:?}), client: ({:?},{:?}), canvas: ({:?},{:?})",
+            event.x(),
+            event.y(),
+            event.client_x(),
+            event.client_y(),
+            x,
+            y,
+        );
+        Ok(())
+    }
+
     pub fn polyhedron_names(&mut self) -> Result<Vec<String>, JsError> {
         let mut stmt = self.connection.prepare("SELECT longname FROM Polyhedron")?;
         let res = stmt
@@ -199,9 +284,11 @@ impl Interface {
             .set_viewport(Viewport::new_at_origo(width, height));
     }
 
-    pub fn set_polyhedron(&mut self, poly: String) -> Result<JsValue, JsError> {
+    pub fn set_polyhedron(&mut self, poly: &str) -> Result<JsValue, JsError> {
         info!("poly request for {poly}");
         let new_poly = Polyhedron::load(&self.connection, &poly)?;
+        self.face_variant_mapping.clear();
+        self.face_variant_mapping.resize(new_poly.faces.len(), 0);
 
         let mut new_mesh = new_poly.cpu_mesh();
         new_mesh.compute_normals();
@@ -235,10 +322,10 @@ impl Interface {
         mesh.transform(Mat4::from_scale(2.0 / 50.0))?;
         if n_gon == 3 {
             // kicad exports the center as like the board origin which is calculated from bounding box
-            // so we transform it on y-axis by 1/3-1/2
+            // so we transform it on y-axis by 1/3-1/2=1/6
             mesh.transform(Mat4::from_translation(vec3(
                 0.0,
-                // size  diff           height-side
+                // size  diff           height-side ratio
                 2.0 * 1.0 / 6.0 * 3.0f32.sqrt() / 2.0,
                 0.0,
             )))?;
@@ -261,60 +348,15 @@ impl Interface {
     }
 }
 
-fn face_instances(
-    polyhedron: &Polyhedron,
-    context: &Context,
-) -> Gm<InstancedMesh, PhysicalMaterial> {
-    // so we'll need a library of face-meshes at some point and then use instancing I think, so first start with a spehere and instance that
-    // (from picking demo)
-    // this is ugly, but we just create a sphere here and now, in stead of loading it from self
-    let mut sphere = CpuMesh::sphere(8);
-    sphere.transform(Mat4::from_scale(0.1)).unwrap();
-    let transformations: Vec<_> = polyhedron.face_transforms.to_vec();
-    // .faces
-    // .iter()
-    // .map(|face| {
-    //     let centroid: Vec3 = face
-    //         .iter()
-    //         .map(|idx| polyhedron.vertices[*idx as usize])
-    //         .sum::<Vec3>()
-    //         / face.len() as f32;
-    //     Mat4::from_translation(centroid)
-    // })
-    // .collect();
-    let no_instances = transformations.len();
-    let instances = Instances {
-        transformations,
-        colors: Some(vec![Srgba::GREEN; no_instances]),
-        ..Default::default()
-    };
-    Gm::new(
-        InstancedMesh::new(&context, &instances, &sphere),
-        PhysicalMaterial::new_transparent(
-            &context,
-            &CpuMaterial {
-                albedo: Srgba::new(255, 255, 0, 255),
-                ..Default::default()
-            },
-        ),
-    )
-}
-
 impl Interface {
     pub fn missing_variants(&self) -> Vec<Vec<usize>> {
         let mut missing_variants = vec![Vec::new(); 11];
-        for n in 3..=10 {
-            if !self
-                .polyhedron
-                .faces
-                .iter()
-                .filter(|f| f.len() == n)
-                .next()
-                .is_none()
-            {
-                if self.pcbs[n][0].is_none() {
-                    missing_variants[n].push(0)
-                }
+        for (i, face) in self.polyhedron.faces.iter().enumerate() {
+            let n = face.len();
+            let var = self.face_variant_mapping[i];
+            // yes vector search, but probs small container, so this better than hashset
+            if self.pcbs[n][var].is_none() && !missing_variants[n].contains(&var) {
+                missing_variants[n].push(var);
             }
         }
         missing_variants
@@ -328,24 +370,31 @@ impl Interface {
         fallback_mesh.transform(Mat4::from_scale(0.1))?;
         // go through all n of n-gon and maybe all variants? but we'll do variants later
         for n in 3..=10 {
-            let mesh = &self.pcbs[n][0].as_ref().unwrap_or(&fallback_mesh);
-            let instances = Instances {
-                transformations: self
-                    .polyhedron
-                    .face_transforms
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| self.polyhedron.faces[*i].len() == n)
-                    .map(|(_, tr)| *tr)
-                    .collect(),
-                ..Default::default()
-            };
-            let instanced_gm = Gm::new(
-                // TODO: fix panic on not present pcb
-                InstancedMesh::new(&self.context, &instances, mesh),
-                PhysicalMaterial::default(),
-            );
-            self.scene.faces.push(instanced_gm);
+            for (var, mesh) in self.pcbs[n].iter().enumerate().filter(|(_, m)| m.is_some()) {
+                let instances = Instances {
+                    transformations: self
+                        .polyhedron
+                        .face_transforms
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| {
+                            self.polyhedron.faces[*i].len() == n
+                                && self.face_variant_mapping[*i] == var
+                        })
+                        .map(|(_, tr)| *tr)
+                        .collect(),
+                    ..Default::default()
+                };
+                let instanced_gm = Gm::new(
+                    // TODO: fix panic on not present pcb
+                    InstancedMesh::new(&self.context, &instances, mesh.as_ref().unwrap()),
+                    PhysicalMaterial {
+                        albedo: Srgba::new_opaque(255, 255, 0),
+                        ..Default::default()
+                    },
+                );
+                self.scene.faces.push(instanced_gm);
+            }
         }
         // let instances = face_instances(&self.polyhedron, &self.context);
         self.render();
