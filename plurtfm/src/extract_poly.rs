@@ -16,12 +16,6 @@ pub struct Polyhedron {
     pub face_transforms: Vec<Mat4>,
 }
 
-pub fn list_polyhedra(conn: &Connection) -> rusqlite::Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT longname FROM Polyhedron")?;
-    stmt.query_map([], |row| row.get::<_, String>(0))?
-        .collect::<Result<Vec<_>>>()
-}
-
 impl Polyhedron {
     pub fn load(conn: &Connection, longname: &str) -> rusqlite::Result<Polyhedron> {
         let poly_id: i64 = conn.query_row(
