@@ -3,6 +3,7 @@ import { Interface } from "./pkg/plurtfm";
 
 export async function loadAsset(path: string) {
   const url = new URL(`./assets/${path}`, import.meta.url);
+  console.log("fetching ", url);
   const r = await fetch(url);
 
   if (r.status === 404) return null;
