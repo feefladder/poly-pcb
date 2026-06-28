@@ -5,7 +5,7 @@ import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
 const polyhedra: Ref<string[]> = ref([]);
 const pcbLoader = ref<PcbLoader | null>(null);
-const canvas = ref(null);
+const canvas = ref();
 const selected = ref("");
 
 let iface: Interface;
@@ -20,11 +20,20 @@ onMounted(async () => {
     pcbLoader.value = new PcbLoader(iface);
 
     polyhedra.value = iface.polyhedron_names();
-    iface.set_polyhedron("tetrahedron");
-    iface.on_resize();
-    iface.render();
 
-    pcbLoader.value!.requestMany([[], [], [], [0]]);
+    const ro = new ResizeObserver(() => {
+        iface.on_resize();
+        iface.render();
+    });
+    ro.observe(canvas.value);
+
+    const hash = decodeURIComponent(window.location.hash.slice(1));
+    const humanized = hash.toLowerCase().replace(/[-_ ]+/g, " ");
+    if (polyhedra.value.includes(humanized)) {
+        selected.value = humanized;
+    } else {
+        selected.value = "tetrahedron";
+    }
 });
 
 watch(selected, async (name) => {
@@ -45,9 +54,9 @@ watch(selected, async (name) => {
                     {{ name }}
                 </option>
             </select>
-            <!-- <p v-if="pcbLoader.busy">
+            <p v-if="pcbLoader?.busy">
                 Loading PCBs ({{ pcbLoader.loadingCount }})...
-            </p> -->
+            </p>
         </aside>
 
         <main class="viewport-container">
