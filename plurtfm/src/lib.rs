@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::extract_poly::{Polyhedron, list_polyhedra};
-use log::info;
+use crate::extract_poly::Polyhedron;
+use log::{debug, info};
 use rusqlite::{Connection, Result};
 use three_d::*;
 use wasm_bindgen::prelude::*;
@@ -25,7 +25,7 @@ pub struct Interface {
     /// need also store somewhere their transforms?
     /// maximum is 10-gon, want nice indexing: face_meshes[3] = triangles
     /// I don't care about unused first 3 units and 7 and 9
-    face_meshes: [Vec<CpuMesh>; 11],
+    pcbs: [Vec<Option<CpuMesh>>; 11],
     /// I guess also transform per stl
     /// so these are kinda...
     /// nah, I think re-calculate them is enough?
@@ -41,7 +41,9 @@ pub struct Interface {
     /// also question is how do rotation?
     ///
     /// but for instance calculating, e.g. how is rendered, below is best
-    transforms: [Vec<Vec<Mat4>>; 11],
+    pcb_transforms: [Vec<Vec<Mat4>>; 11],
+    // /// Mapping from polygon face index -> pcb variant
+    // face_variant_mapping: Vec<usize>,
 }
 
 /// The scene is well, the scene
@@ -50,7 +52,7 @@ pub struct Interface {
 pub struct Scene {
     camera: Camera,
     model: Gm<Mesh, PhysicalMaterial>,
-    faces: Gm<InstancedMesh, PhysicalMaterial>,
+    faces: Vec<Gm<InstancedMesh, PhysicalMaterial>>,
     lights: Vec<Box<dyn Light>>,
 }
 
@@ -61,18 +63,20 @@ pub enum PlurEvent {
 }
 
 #[wasm_bindgen]
-pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue> {
+pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interface, JsValue> {
     // Set up panic hook for better error messages in the browser
     console_error_panic_hook::set_once();
     console_log::init_with_level(log::Level::Trace).unwrap();
 
     info!("logging works");
-    // Get the polydb and load it
-    let db_bytes = fetch("assets/polydb.sqlite3").await?;
     // Open an in-memory database
-    let connection = Connection::open(":memory:").map_err(|e| ErrorShim::from(e))?;
+    let connection = Connection::open(":memory:").map_err(|e| e.to_string())?;
     let len = db_bytes.len() as i64;
 
+    debug!(
+        "loading database: {}",
+        String::from_utf8_lossy(&db_bytes[..10])
+    );
     unsafe {
         sqlite_wasm_rs::sqlite3_deserialize(
             connection.handle().cast(),
@@ -102,7 +106,7 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         vec3(0.0, 1.0, 0.0),
         degrees(45.0),
         0.1,
-        10.0,
+        100.0,
     );
     // Create model
     let mut model = Gm::new(
@@ -110,19 +114,19 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         PhysicalMaterial::new(&context, &CpuMaterial::default()),
     );
 
-    // glb is big deps, stl smol
-    // http is huge deps, bc we don't understand that fetch api exists?
-    let key = "assets/3-01.stl";
-    let stl_bytes = fetch(key).await?;
-    let mut loaded: CpuMesh =
-        three_d_asset::io::deserialize(key, stl_bytes).map_err(|e| e.to_string())?;
+    // // glb is big deps, stl smol
+    // // http is huge deps, bc we don't understand that fetch api exists?
+    // let key = "assets/3-01.stl";
+    // let stl_bytes = fetch(key).await?;
+    // let mut loaded: CpuMesh =
+    //     three_d_asset::io::deserialize(key, stl_bytes).map_err(|e| e.to_string())?;
 
-    loaded.transform(Mat4::from_translation(vec3(0.0, 3.0f32.sqrt() / 2.0, 0.0)));
-    loaded.transform(Mat4::from_scale(2.0 / 50.0));
-    model = Gm::new(
-        Mesh::new(&context, &loaded),
-        PhysicalMaterial::new(&context, &CpuMaterial::default()),
-    );
+    // loaded.transform(Mat4::from_translation(vec3(0.0, 3.0f32.sqrt() / 2.0, 0.0)));
+    // loaded.transform(Mat4::from_scale(2.0 / 50.0));
+    // model = Gm::new(
+    //     Mesh::new(&context, &loaded),
+    //     PhysicalMaterial::new(&context, &CpuMaterial::default()),
+    // );
 
     // add light
     let ambient = AmbientLight::new(&context, 0.2, Srgba::RED);
@@ -134,8 +138,7 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
         Attenuation::default(),
     );
     let polyhedron = Polyhedron::load(&connection, "truncated cube").map_err(|e| e.to_string())?;
-    let mut face_meshes: [Vec<CpuMesh>; 11] = Default::default();
-    face_meshes[3].push(loaded);
+    // face_meshes[3].push(loaded);
     let iface = Interface {
         backing_bytes: db_bytes,
         connection,
@@ -143,14 +146,14 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
             camera,
             model: model,
             lights: vec![Box::new(ambient), Box::new(point)],
-            faces: face_instances(&polyhedron, &context),
+            faces: vec![face_instances(&polyhedron, &context)],
         },
         polyhedron,
         canvas,
         context,
         // https://stackoverflow.com/a/54134142/14681457
-        face_meshes,
-        transforms: Default::default(),
+        pcbs: std::array::from_fn(|_| vec![None; 4]),
+        pcb_transforms: Default::default(),
     };
 
     Ok(iface)
@@ -158,27 +161,23 @@ pub async fn init_iface(canvas: HtmlCanvasElement) -> Result<Interface, JsValue>
 
 #[wasm_bindgen]
 impl Interface {
-    pub fn polyhedron_names(&mut self) -> Result<Vec<String>, JsValue> {
-        list_polyhedra(&self.connection).map_err(|e| JsValue::from_str(&e.to_string()))
+    pub fn polyhedron_names(&mut self) -> Result<Vec<String>, JsError> {
+        let mut stmt = self.connection.prepare("SELECT longname FROM Polyhedron")?;
+        let res = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>>>()?;
+        Ok(res)
     }
 
     pub fn render(&mut self) {
-        let width = self.canvas.client_width() as u32;
-        let height = self.canvas.client_height() as u32;
-
-        self.canvas.set_width(width);
-        self.canvas.set_height(height);
-
-        self.scene
-            .camera
-            .set_viewport(Viewport::new_at_origo(width, height));
         // actually draw something?
-        let screen = RenderTarget::screen(&self.context, width, height);
+        let screen = RenderTarget::screen(&self.context, self.canvas.width(), self.canvas.height());
+        // ok, so this is slightly weird, but we first create an iterator from faces and then
         screen
             .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
             .render(
                 &self.scene.camera,
-                &self.scene.faces, //self.scene.model.into_iter().chain(&self.scene.faces),
+                self.scene.faces.iter().flat_map(|f| f.into_iter()), //self.scene.model.into_iter().chain(&self.scene.faces),
                 &self
                     .scene
                     .lights
@@ -188,7 +187,19 @@ impl Interface {
             );
     }
 
-    pub fn set_polyhedron(&mut self, poly: String) -> Result<(), JsError> {
+    pub fn on_resize(&mut self) {
+        let width = self.canvas.client_width() as u32;
+        let height = self.canvas.client_height() as u32;
+
+        self.canvas.set_width(width);
+        self.canvas.set_height(height);
+
+        self.scene
+            .camera
+            .set_viewport(Viewport::new_at_origo(width, height));
+    }
+
+    pub fn set_polyhedron(&mut self, poly: String) -> Result<JsValue, JsError> {
         info!("poly request for {poly}");
         let new_poly = Polyhedron::load(&self.connection, &poly)?;
 
@@ -201,30 +212,30 @@ impl Interface {
         self.scene.model = new_model;
         self.polyhedron = new_poly;
         self.add_mesh_to_faces()?;
-        self.render();
-        Ok(())
+        // so
+        serde_wasm_bindgen::to_value(&self.missing_variants()).map_err(|e| JsError::from(e))
     }
 
-    pub fn add_mesh_to_faces(&mut self) -> Result<(), JsError> {
-        // let instances = face_instances(&self.polyhedron, &self.context);
-        // just put triangle on every face
-        let instances = Instances {
-            transformations: self
-                .polyhedron
-                .face_transforms
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| self.polyhedron.faces[*i].len() == 3)
-                .map(|(_, tr)| tr / 2.5)
-                .collect(),
-            ..Default::default()
-        };
-        let instanced_gm = Gm::new(
-            InstancedMesh::new(&self.context, &instances, &self.face_meshes[3][0]),
-            PhysicalMaterial::default(),
-        );
-        self.scene.faces = instanced_gm;
-        self.render();
+    /// Load pcb stls into the simulation
+    ///
+    /// needs to be organized as
+    /// `pcb = [nr_of_edges][variant]`
+    /// so to get second variant of pentagon, can do `pcbs[5][1]`
+    pub fn add_pcb(&mut self, n_gon: usize, variant: usize, data: Vec<u8>) -> Result<(), JsError> {
+        // add None for non-existent variants
+        while self.pcbs[n_gon].len() <= variant {
+            self.pcbs[n_gon].push(None);
+        }
+        let key = &format!("{}-{:b}.stl", n_gon, variant);
+        debug!("{} bytes", data.len());
+        debug!("{:?}", &data[..16.min(data.len())]);
+        debug!("loading stl {}", String::from_utf8_lossy(&data[..10]));
+        let mut mesh: CpuMesh = three_d_asset::io::deserialize(key, data)?;
+        mesh.transform(Mat4::from_scale(2.0 / 50.0))?;
+        self.pcbs[n_gon][variant] = Some(mesh);
+        info!("successfully loaded stl for {key}");
+        // side-effects, yay!
+        self.add_mesh_to_faces()?;
         Ok(())
     }
 }
@@ -268,33 +279,55 @@ fn face_instances(
     )
 }
 
-// need to fetch db from site
-// use bare api: https://rustwasm.app/en/learn/fetch-api
-async fn fetch(path: &str) -> Result<Vec<u8>, JsValue> {
-    let opts = RequestInit::new();
-    opts.set_method("GET");
-
-    let request = Request::new_with_str_and_init(path, &opts)?;
-    let window = window().unwrap();
-    let resp: Response = JsFuture::from(window.fetch_with_request(&request))
-        .await?
-        .dyn_into()?;
-    // TODO: fail here on error in stead of returning empty array
-    let buf = resp.array_buffer()?.await?;
-
-    Ok(Uint8Array::new(&buf).to_vec())
-}
-
-struct ErrorShim(String);
-
-impl From<rusqlite::Error> for ErrorShim {
-    fn from(value: rusqlite::Error) -> Self {
-        ErrorShim(format!("Error: {value}"))
+impl Interface {
+    pub fn missing_variants(&self) -> Vec<Vec<usize>> {
+        let mut missing_variants = vec![Vec::new(); 11];
+        for n in 3..=10 {
+            if !self
+                .polyhedron
+                .faces
+                .iter()
+                .filter(|f| f.len() == n)
+                .next()
+                .is_none()
+            {
+                if self.pcbs[n][0].is_none() {
+                    missing_variants[n].push(0)
+                }
+            }
+        }
+        missing_variants
     }
-}
 
-impl From<ErrorShim> for JsValue {
-    fn from(value: ErrorShim) -> Self {
-        JsValue::from_str(&value.0)
+    pub fn add_mesh_to_faces(&mut self) -> Result<(), JsError> {
+        // This is slightly ugly now, because we re-upload the meshes, but I
+        // guess that's fine because it allows to update them or something
+        self.scene.faces.clear();
+        let mut fallback_mesh = CpuMesh::sphere(8);
+        fallback_mesh.transform(Mat4::from_scale(0.1))?;
+        // go through all n of n-gon and maybe all variants? but we'll do variants later
+        for n in 3..=10 {
+            let mesh = &self.pcbs[n][0].as_ref().unwrap_or(&fallback_mesh);
+            let instances = Instances {
+                transformations: self
+                    .polyhedron
+                    .face_transforms
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| self.polyhedron.faces[*i].len() == n)
+                    .map(|(_, tr)| *tr)
+                    .collect(),
+                ..Default::default()
+            };
+            let instanced_gm = Gm::new(
+                // TODO: fix panic on not present pcb
+                InstancedMesh::new(&self.context, &instances, mesh),
+                PhysicalMaterial::default(),
+            );
+            self.scene.faces.push(instanced_gm);
+        }
+        // let instances = face_instances(&self.polyhedron, &self.context);
+        self.render();
+        Ok(())
     }
 }
