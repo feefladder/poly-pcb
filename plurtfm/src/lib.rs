@@ -10,6 +10,7 @@ use web_sys::{
 };
 
 mod polyhedron;
+mod ui;
 
 /// The interface is the entrypoint for wasm
 ///
@@ -54,7 +55,7 @@ pub struct Interface {
 pub struct Scene {
     camera: Camera,
     model: Gm<Mesh, PhysicalMaterial>,
-    faces: Vec<Gm<InstancedMesh, PhysicalMaterial>>,
+    instanced_pcbs: Vec<Gm<InstancedMesh, PhysicalMaterial>>,
     lights: Vec<Box<dyn Light>>,
 }
 
@@ -148,7 +149,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
             camera,
             model: model,
             lights: vec![Box::new(point), Box::new(ambient)],
-            faces: Vec::new(),
+            instanced_pcbs: Vec::new(),
         },
         polyhedron,
         canvas,
@@ -171,40 +172,47 @@ impl Interface {
                 self.scene
                     .camera
                     .rotate_around(Vec3::zero(), std::f32::consts::FRAC_PI_8, 0.0);
+                self.render();
             }
             "ArrowRight" => {
                 self.scene
                     .camera
                     .rotate_around(Vec3::zero(), -std::f32::consts::FRAC_PI_8, 0.0);
+                self.render();
             }
             "ArrowUp" => {
                 self.scene
                     .camera
                     .rotate_around(Vec3::zero(), 0.0, std::f32::consts::FRAC_PI_8);
+                self.render();
             }
             "ArrowDown" => {
                 self.scene
                     .camera
                     .rotate_around(Vec3::zero(), 0.0, -std::f32::consts::FRAC_PI_8);
+                self.render();
             }
             "Tab" | " " => {
-                let polyhedra = self.polyhedron_names()?;
-                if let Some(i) = polyhedra.iter().position(|n| **n == self.polyhedron.name) {
-                    let next_polyhedron = &polyhedra[(i + 1) % polyhedra.len()];
-                    let e_detail = CustomEventInit::new();
-                    e_detail.set_detail(&next_polyhedron.into());
-                    self.canvas
-                        .dispatch_event(
-                            &web_sys::CustomEvent::new_with_event_init_dict(
-                                "next_polyhedron",
-                                &e_detail,
-                            )
-                            .unwrap(),
-                        )
-                        .unwrap();
-                }
+                self.next_polyhedron()?;
             }
             k => info!("pressed {k:?}"),
+        }
+
+        Ok(())
+    }
+
+    pub fn next_polyhedron(&mut self) -> Result<(), JsError> {
+        let polyhedra = self.polyhedron_names()?;
+        if let Some(i) = polyhedra.iter().position(|n| **n == self.polyhedron.name) {
+            let next_polyhedron = &polyhedra[(i + 1) % polyhedra.len()];
+            let e_detail = CustomEventInit::new();
+            e_detail.set_detail(&next_polyhedron.into());
+            self.canvas
+                .dispatch_event(
+                    &web_sys::CustomEvent::new_with_event_init_dict("next_polyhedron", &e_detail)
+                        .unwrap(),
+                )
+                .unwrap();
         }
         self.render();
         Ok(())
@@ -262,7 +270,7 @@ impl Interface {
             &self.context,
             &self.scene.camera,
             (x, y),
-            self.scene.faces.iter().flat_map(|f| f.into_iter()),
+            self.scene.instanced_pcbs.iter().flat_map(|f| f.into_iter()),
             Cull::Back,
         )? {
             info!(
@@ -271,18 +279,22 @@ impl Interface {
             );
             // need to find out which face was clicked, based on geometry/instance ids..
             // maybe it's worth keeping around some mapping? it's kind of load-order dependent...
-            // ah, wait geometryId ofc directly corresponds to
+            // ah, wait geometryId ofc directly corresponds to the place in self.scene.faces
+            // but those are a flat-map version
         }
-        info!(
-            "at ({:?},{:?}), client: ({:?},{:?}), canvas: ({:?},{:?})",
-            event.x(),
-            event.y(),
-            event.client_x(),
-            event.client_y(),
-            x,
-            y,
-        );
         Ok(())
+    }
+
+    pub fn on_resize(&mut self) {
+        let width = self.canvas.client_width() as u32;
+        let height = self.canvas.client_height() as u32;
+
+        self.canvas.set_width(width);
+        self.canvas.set_height(height);
+
+        self.scene
+            .camera
+            .set_viewport(Viewport::new_at_origo(width, height));
     }
 
     pub fn polyhedron_names(&mut self) -> Result<Vec<String>, JsError> {
@@ -301,7 +313,7 @@ impl Interface {
             .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
             .render(
                 &self.scene.camera,
-                self.scene.faces.iter().flat_map(|f| f.into_iter()), //self.scene.model.into_iter().chain(&self.scene.faces),
+                self.scene.instanced_pcbs.iter().flat_map(|f| f.into_iter()), //self.scene.model.into_iter().chain(&self.scene.faces),
                 &self
                     .scene
                     .lights
@@ -309,18 +321,6 @@ impl Interface {
                     .map(|l| l.as_ref())
                     .collect::<Vec<_>>(),
             );
-    }
-
-    pub fn on_resize(&mut self) {
-        let width = self.canvas.client_width() as u32;
-        let height = self.canvas.client_height() as u32;
-
-        self.canvas.set_width(width);
-        self.canvas.set_height(height);
-
-        self.scene
-            .camera
-            .set_viewport(Viewport::new_at_origo(width, height));
     }
 
     pub fn set_polyhedron(&mut self, poly: &str) -> Result<JsValue, JsError> {
@@ -406,10 +406,18 @@ impl Interface {
     pub fn add_mesh_to_faces(&mut self) -> Result<(), JsError> {
         // This is slightly ugly now, because we re-upload the meshes, but I
         // guess that's fine because it allows to update them or something
-        self.scene.faces.clear();
+        self.scene.instanced_pcbs.clear();
         let mut fallback_mesh = CpuMesh::sphere(8);
         fallback_mesh.transform(Mat4::from_scale(0.1))?;
-        // go through all n of n-gon and maybe all variants? but we'll do variants later
+        // go through all n of n-gon and all variants.
+        // INVARIANT: self.scene.faces order is depended on for face-click detection
+        // this is a flattened version of self.pcbs
+        // that's actually sensible
+        // so range(self.faces, 4) = {
+        //  let start = self.pcbs.iter().take(4).map(|n| n.len()).sum();
+        //  let len = self.pcbs[4].len();
+        //  start..start+len
+        // }
         for n in 3..=10 {
             for (var, mesh) in self.pcbs[n].iter().enumerate().filter(|(_, m)| m.is_some()) {
                 let instances = Instances {
@@ -427,14 +435,15 @@ impl Interface {
                     ..Default::default()
                 };
                 let instanced_gm = Gm::new(
-                    // TODO: fix panic on not present pcb
+                    // TODO: don't upload to GPU every f'ing time, but set_transforms on the instancedmeshes
+                    // that'll also alllow for a better mapping
                     InstancedMesh::new(&self.context, &instances, mesh.as_ref().unwrap()),
                     PhysicalMaterial {
                         albedo: Srgba::new_opaque(255, 255, 127),
                         ..Default::default()
                     },
                 );
-                self.scene.faces.push(instanced_gm);
+                self.scene.instanced_pcbs.push(instanced_gm);
             }
         }
         // let instances = face_instances(&self.polyhedron, &self.context);
