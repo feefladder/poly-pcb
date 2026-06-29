@@ -47,7 +47,6 @@ jobs:
         run: |
           cd plurtfm/web
           npm run build
-          cp assets/* dist/assets/
 
       # 6. Deploy to GitHub Pages
       - name: Deploy to GitHub Pages

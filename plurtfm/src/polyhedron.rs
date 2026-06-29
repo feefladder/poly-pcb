@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result};
+use rusqlite::Connection;
 use std::collections::HashMap;
 use three_d::*;
 

@@ -1,14 +1,12 @@
-use std::{ops::Index, sync::Arc};
+use std::sync::Arc;
 
 use crate::polyhedron::Polyhedron;
 use log::{debug, info};
 use rusqlite::{Connection, Result};
 use three_d::*;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     CustomEventInit, HtmlCanvasElement, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent,
-    js_sys::Uint8Array, window,
 };
 
 mod polyhedron;
@@ -218,7 +216,6 @@ impl Interface {
     }
 
     pub fn on_pointer_move(&mut self, event: PointerEvent) -> Result<(), JsError> {
-        info!("pointer moved {event:?}");
         // Only rotate while the primary button is held.
         if event.buttons() & 1 == 0 {
             return Ok(());
@@ -272,6 +269,9 @@ impl Interface {
                 "clicked on face with geometry id {}, instance id {}",
                 p.geometry_id, p.instance_id
             );
+            // need to find out which face was clicked, based on geometry/instance ids..
+            // maybe it's worth keeping around some mapping? it's kind of load-order dependent...
+            // ah, wait geometryId ofc directly corresponds to
         }
         info!(
             "at ({:?},{:?}), client: ({:?},{:?}), canvas: ({:?},{:?})",
