@@ -32,6 +32,9 @@ export class PcbLoader {
     const promises = [];
 
     for (const [nGon, variants] of missingVariants.entries()) {
+      if (!variants) {
+        continue;
+      }
       for (const variant of variants) {
         const key = `${nGon}-${variant}`;
 
