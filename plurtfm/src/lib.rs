@@ -7,7 +7,8 @@ use three_d::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    CustomEventInit, HtmlCanvasElement, KeyboardEvent, MouseEvent, js_sys::Uint8Array, window,
+    CustomEventInit, HtmlCanvasElement, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent,
+    js_sys::Uint8Array, window,
 };
 
 mod polyhedron;
@@ -211,6 +212,44 @@ impl Interface {
         Ok(())
     }
 
+    pub fn on_pointer_down(&mut self, event: PointerEvent) -> Result<(), JsValue> {
+        info!("pointer down {event:?}");
+        self.canvas.set_pointer_capture(event.pointer_id())
+    }
+
+    pub fn on_pointer_move(&mut self, event: PointerEvent) -> Result<(), JsError> {
+        info!("pointer moved {event:?}");
+        // Only rotate while the primary button is held.
+        if event.buttons() & 1 == 0 {
+            return Ok(());
+        }
+        self.scene.camera.rotate_around(
+            Vec3::zero(),
+            event.movement_x() as f32 / 42.0,
+            event.movement_y() as f32 / 42.0,
+        );
+        self.render();
+        Ok(())
+    }
+
+    pub fn on_pointer_up(&mut self, event: PointerEvent) -> Result<(), JsValue> {
+        info!("pointer moved {event:?}");
+        self.canvas.release_pointer_capture(event.pointer_id())
+    }
+
+    pub fn on_wheel(&mut self, event: WheelEvent) -> Result<(), JsValue> {
+        info!("scroll {event:?}");
+        let delta = event.delta_y() as f32;
+
+        // Zoom in/out.
+        self.scene
+            .camera
+            .zoom(-delta / 42.0, std::f32::NEG_INFINITY, std::f32::INFINITY);
+
+        self.render();
+        Ok(())
+    }
+
     pub fn on_click(&mut self, event: MouseEvent) -> Result<(), JsError> {
         info!("mouse event happened: {event:?}");
         let rect = self.canvas.get_bounding_client_rect();
@@ -287,7 +326,6 @@ impl Interface {
     pub fn set_polyhedron(&mut self, poly: &str) -> Result<JsValue, JsError> {
         info!("poly request for {poly}");
         let new_poly = Polyhedron::load(&self.connection, &poly)?;
-        self.face_variant_mapping.clear();
         self.face_variant_mapping.resize(new_poly.faces.len(), 0);
 
         let mut new_mesh = new_poly.cpu_mesh();

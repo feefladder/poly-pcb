@@ -64,8 +64,11 @@ watch(selected, async (name) => {
                 ref="canvas"
                 tabindex="0"
                 @keydown="iface.on_key"
-                @click="iface.on_click"
                 @next_polyhedron="selected = $event.detail"
+                @pointerdown="iface.on_pointer_down"
+                @pointermove="iface.on_pointer_move"
+                @pointerup="iface.on_pointer_up"
+                @wheel.prevent="iface.on_wheel"
             ></canvas>
         </main>
     </div>
