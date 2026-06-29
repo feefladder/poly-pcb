@@ -276,7 +276,6 @@ impl Interface {
                 continue;
             }
             let var = self.face_variant_mapping[i];
-            debug!("checking if variant {var} exists as pcb in {:?}", self.pcbs);
             // yes vector search, but probs small container, so this better than hashset
             if self.pcbs[n].len() <= var {
                 missing_variants[n].push(var);
