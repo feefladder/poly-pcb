@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::polyhedron::Polyhedron;
+use colorous::{PAIRED, SINEBOW, VIRIDIS};
 use log::{debug, info};
 use rusqlite::{Connection, Result};
 use three_d::*;
@@ -45,6 +46,8 @@ pub struct Interface {
     // pcb_transforms: [Vec<Vec<Mat4>>; 11],
     /// Mapping from polygon face index -> pcb variant
     face_variant_mapping: Vec<usize>,
+    /// super single-source-of-truth-and-ignore-face_variant_mapping_plz_or_something
+    instances: Vec<Instances>,
 }
 
 /// The scene is well, the scene
@@ -131,12 +134,12 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
     // );
 
     // add light
-    let ambient = AmbientLight::new(&context, 0.02, Srgba::new_opaque(249, 240, 107));
+    let ambient = AmbientLight::new(&context, 0.05, Srgba::WHITE);
     let point = PointLight::new(
         &context,
-        0.2,
+        0.5,
         Srgba::WHITE,
-        vec3(-10.0, -10.0, 10.0),
+        vec3(-20.0, -20.0, 20.0),
         Attenuation::default(),
     );
     let polyhedron = Polyhedron::load(&connection, "truncated cube").map_err(|e| e.to_string())?;
@@ -155,9 +158,10 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         canvas,
         context,
         // https://stackoverflow.com/a/54134142/14681457
-        pcbs: std::array::from_fn(|_| vec![None; 4]),
+        pcbs: Default::default(),
         // only populated when there is something
         face_variant_mapping: Vec::new(),
+        instances: Vec::new(),
     };
 
     Ok(iface)
@@ -193,6 +197,7 @@ impl Interface {
     pub fn set_polyhedron(&mut self, poly: &str) -> Result<JsValue, JsError> {
         info!("poly request for {poly}");
         let new_poly = Polyhedron::load(&self.connection, &poly)?;
+        self.face_variant_mapping.clear();
         self.face_variant_mapping.resize(new_poly.faces.len(), 0);
 
         let mut new_mesh = new_poly.cpu_mesh();
@@ -219,15 +224,13 @@ impl Interface {
             self.pcbs[n_gon].push(None);
         }
         let key = &format!("{}-{:b}.stl", n_gon, variant);
-        debug!("{} bytes", data.len());
-        debug!("{:?}", &data[..16.min(data.len())]);
-        debug!("loading stl {}", String::from_utf8_lossy(&data[..10]));
         let mut mesh: CpuMesh = three_d_asset::io::deserialize(key, data)?;
 
         mesh.transform(Mat4::from_scale(2.0 / 50.0))?;
         if n_gon == 3 {
             // kicad exports the center as like the board origin which is calculated from bounding box
             // so we transform it on y-axis by 1/3-1/2=1/6
+            // because real center of triangle is 1/3 of its height
             mesh.transform(Mat4::from_translation(vec3(
                 0.0,
                 // size  diff           height-side ratio
@@ -273,8 +276,11 @@ impl Interface {
                 continue;
             }
             let var = self.face_variant_mapping[i];
+            debug!("checking if variant {var} exists as pcb in {:?}", self.pcbs);
             // yes vector search, but probs small container, so this better than hashset
-            if self.pcbs[n][var].is_none() && !missing_variants[n].contains(&var) {
+            if self.pcbs[n].len() <= var {
+                missing_variants[n].push(var);
+            } else if self.pcbs[n][var].is_none() && !missing_variants[n].contains(&var) {
                 missing_variants[n].push(var);
             }
         }
@@ -286,6 +292,7 @@ impl Interface {
         // guess that's fine because it allows to update them or something
         self.scene.instanced_pcbs.clear();
         self.scene.face_instance_map.clear();
+        self.instances.clear();
         self.scene
             .face_instance_map
             .resize(self.polyhedron.faces.len(), Default::default());
@@ -306,26 +313,36 @@ impl Interface {
                 .enumerate()
                 .filter(|(_, m)| m.is_some())
             {
+                let transformations: Vec<Mat4> = self
+                    .polyhedron
+                    .face_transforms
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| {
+                        self.polyhedron.faces[*i].len() == n_gon
+                            && self.face_variant_mapping[*i] == variant
+                    })
+                    .map(|(_, tr)| *tr)
+                    .collect();
                 let instances = Instances {
-                    transformations: self
-                        .polyhedron
-                        .face_transforms
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| {
-                            self.polyhedron.faces[*i].len() == n_gon
-                                && self.face_variant_mapping[*i] == variant
-                        })
-                        .map(|(_, tr)| *tr)
-                        .collect(),
+                    colors: Some(
+                        (0..transformations.len())
+                            .map(|i| {
+                                let color = SINEBOW.eval_rational(i, transformations.len()); // PAIRED[i % PAIRED.len()]; // VIRIDIS.eval_rational(i, transformations.len());
+                                Srgba::new_opaque(color.r, color.g, color.b)
+                            })
+                            .collect(),
+                    ),
+                    transformations,
                     ..Default::default()
                 };
+                self.instances.push(instances.clone());
                 let instanced_gm = Gm::new(
                     // TODO: don't upload to GPU every f'ing time, but set_transforms on the instancedmeshes
                     // that'll also alllow for a better mapping
                     InstancedMesh::new(&self.context, &instances, mesh.as_ref().unwrap()),
                     PhysicalMaterial {
-                        albedo: Srgba::new_opaque(255, 255, 127),
+                        albedo: Srgba::WHITE,
                         ..Default::default()
                     },
                 );

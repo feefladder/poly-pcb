@@ -3,11 +3,17 @@
 //! anything responding to events, because it was growing too big
 
 use log::info;
-use three_d::{Cull, Vec3, Viewport, Zero, pick};
-use wasm_bindgen::{JsError, JsValue, UnwrapThrowExt, prelude::wasm_bindgen};
+use three_d::{Cull, Srgba, Vec3, Viewport, Zero, pick};
+use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
 use crate::Interface;
+
+#[wasm_bindgen]
+pub struct PcbId {
+    pub n_gon: usize,
+    pub variant: usize,
+}
 
 #[wasm_bindgen]
 impl Interface {
@@ -72,6 +78,34 @@ impl Interface {
         // Only rotate while the primary button is held.
         if event.buttons() & 1 == 0 {
             return Ok(());
+        } else {
+            let rect = self.canvas.get_bounding_client_rect();
+            // is f64 bc css pixels are fake, scale by canvas size to get back to physics the gpu understands
+            let x = ((event.client_x() as f64 - rect.left()) * self.canvas.width() as f64
+                / rect.width()) as f32;
+
+            let y = ((rect.bottom() - event.client_y() as f64) * self.canvas.height() as f64
+                / rect.height()) as f32;
+
+            if let Some(p) = pick(
+                &self.context,
+                &self.scene.camera,
+                (x, y),
+                self.scene.instanced_pcbs.iter().flat_map(|f| f.into_iter()),
+                Cull::Back,
+            )? {
+                info!(
+                    "clicked on face with geometry id {}, instance id {}",
+                    p.geometry_id, p.instance_id
+                );
+                self.instances[p.geometry_id as usize]
+                    .colors
+                    .as_mut()
+                    .unwrap()[p.instance_id as usize] = Srgba::BLACK;
+                self.scene.instanced_pcbs[p.geometry_id as usize]
+                    .set_instances(&self.instances[p.geometry_id as usize]);
+                self.render();
+            }
         }
         self.scene.camera.rotate_around(
             Vec3::zero(),
@@ -108,7 +142,7 @@ impl Interface {
         let x = ((event.client_x() as f64 - rect.left()) * self.canvas.width() as f64
             / rect.width()) as f32;
 
-        let y = ((event.client_y() as f64 - rect.top()) * self.canvas.height() as f64
+        let y = ((rect.bottom() - event.client_y() as f64) * self.canvas.height() as f64
             / rect.height()) as f32;
 
         if let Some(p) = pick(
@@ -123,15 +157,38 @@ impl Interface {
                 p.geometry_id, p.instance_id
             );
             // unwrap bc from raycast, so must be possible, unless code buggy
+            let transform =
+                self.instances[p.geometry_id as usize].transformations[p.instance_id as usize];
             let face_id = self
-                .face_index(p.geometry_id as usize, p.instance_id as usize)
-                .ok_or(JsError::new(&format!(
-                    "face ({},{}) not exist, have {:?}",
-                    p.geometry_id, p.instance_id, self.scene.face_instance_map
-                )))?;
-            let variant = self.face_variant_mapping[face_id];
+                .polyhedron
+                .face_transforms
+                .iter()
+                .position(|t| *t == transform)
+                .ok_or(JsError::new("HELP!"))?;
+            let n_gon = self.polyhedron.faces[face_id].len();
+            let current_variant = self.face_variant_mapping[face_id];
+            if self.face_variant_mapping[face_id] == self.pcbs[n_gon].len() - 1 {
+                let e_detail = CustomEventInit::new();
+                e_detail.set_detail(
+                    &PcbId {
+                        n_gon,
+                        variant: current_variant + 1,
+                    }
+                    .into(),
+                );
+
+                self.canvas
+                    .dispatch_event(
+                        &CustomEvent::new_with_event_init_dict("request_pcb", &e_detail).unwrap(),
+                    )
+                    .unwrap();
+                self.face_variant_mapping[face_id] = 0;
+                // now it would actually be nice to somewhere have a "this instances array is this n-var" so we don't have to re-upload meshes
+            } else {
+                self.face_variant_mapping[face_id] = current_variant + 1;
+            }
             // also need find out which pcb that is, but for now, we'll magic number 2
-            self.face_variant_mapping[face_id] = (variant + 1) % 2;
+
             // need to find out which face was clicked, based on geometry/instance ids..
             // maybe it's worth keeping around some mapping? it's kind of load-order dependent...
             // ah, wait geometryId ofc directly corresponds to the place in self.scene.faces

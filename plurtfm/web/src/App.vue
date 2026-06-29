@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, Ref } from "vue";
-import { Interface } from "./pkg/plurtfm.js";
+import { Interface, PcbId } from "./pkg/plurtfm.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
 const polyhedra: Ref<string[]> = ref([]);
@@ -65,6 +65,18 @@ watch(selected, async (name) => {
                 tabindex="0"
                 @keydown="iface.on_key"
                 @next_polyhedron="selected = $event.detail"
+                @request_pcb="
+                    (e: CustomEvent<PcbId>) => {
+                        console.log(
+                            `pcb ${e.detail.n_gon}-${e.detail.variant} requested `,
+                            e,
+                        );
+                        const n_gon = e.detail.n_gon;
+                        const arr: number[][] = [];
+                        arr[n_gon] = [e.detail.variant];
+                        pcbLoader?.requestMany(arr);
+                    }
+                "
                 @pointerdown="iface?.on_pointer_down"
                 @pointermove="iface?.on_pointer_move"
                 @pointerup="iface?.on_pointer_up"
