@@ -55,6 +55,7 @@ pub struct Scene {
     model: Gm<Mesh, PhysicalMaterial>,
     instanced_pcbs: Vec<Gm<InstancedMesh, PhysicalMaterial>>,
     lights: Vec<Box<dyn Light>>,
+    face_instance_map: Vec<(usize, usize)>,
 }
 
 #[wasm_bindgen]
@@ -148,6 +149,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
             model: model,
             lights: vec![Box::new(point), Box::new(ambient)],
             instanced_pcbs: Vec::new(),
+            face_instance_map: Vec::new(),
         },
         polyhedron,
         canvas,
@@ -174,12 +176,11 @@ impl Interface {
     pub fn render(&mut self) {
         // actually draw something?
         let screen = RenderTarget::screen(&self.context, self.canvas.width(), self.canvas.height());
-        // ok, so this is slightly weird, but we first create an iterator from faces and then
         screen
             .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
             .render(
                 &self.scene.camera,
-                self.scene.instanced_pcbs.iter().flat_map(|f| f.into_iter()), //self.scene.model.into_iter().chain(&self.scene.faces),
+                self.scene.instanced_pcbs.iter().flat_map(|f| f.into_iter()),
                 &self
                     .scene
                     .lights
@@ -253,6 +254,17 @@ impl Interface {
 }
 
 impl Interface {
+    pub fn instanced_pcb_index(&self, face_id: usize) -> (usize, usize) {
+        self.scene.face_instance_map[face_id]
+    }
+
+    pub fn face_index(&self, instanced_pcb_id: usize, instance_id: usize) -> Option<usize> {
+        self.scene
+            .face_instance_map
+            .iter()
+            .position(|a| *a == (instanced_pcb_id, instance_id))
+    }
+
     pub fn missing_variants(&self) -> Vec<Vec<usize>> {
         let mut missing_variants = vec![Vec::new(); self.pcbs.len()];
         for (i, face) in self.polyhedron.faces.iter().enumerate() {
@@ -273,6 +285,10 @@ impl Interface {
         // This is slightly ugly now, because we re-upload the meshes, but I
         // guess that's fine because it allows to update them or something
         self.scene.instanced_pcbs.clear();
+        self.scene.face_instance_map.clear();
+        self.scene
+            .face_instance_map
+            .resize(self.polyhedron.faces.len(), Default::default());
         let mut fallback_mesh = CpuMesh::sphere(8);
         fallback_mesh.transform(Mat4::from_scale(0.1))?;
         // go through all n of n-gon and all variants.
@@ -284,8 +300,12 @@ impl Interface {
         //  let len = self.pcbs[4].len();
         //  start..start+len
         // }
-        for n in 3..=10 {
-            for (var, mesh) in self.pcbs[n].iter().enumerate().filter(|(_, m)| m.is_some()) {
+        for n_gon in 3..=10 {
+            for (variant, mesh) in self.pcbs[n_gon]
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| m.is_some())
+            {
                 let instances = Instances {
                     transformations: self
                         .polyhedron
@@ -293,8 +313,8 @@ impl Interface {
                         .iter()
                         .enumerate()
                         .filter(|(i, _)| {
-                            self.polyhedron.faces[*i].len() == n
-                                && self.face_variant_mapping[*i] == var
+                            self.polyhedron.faces[*i].len() == n_gon
+                                && self.face_variant_mapping[*i] == variant
                         })
                         .map(|(_, tr)| *tr)
                         .collect(),
@@ -310,6 +330,20 @@ impl Interface {
                     },
                 );
                 self.scene.instanced_pcbs.push(instanced_gm);
+                for (instance_index, (face_index, _transform)) in self
+                    .polyhedron
+                    .face_transforms
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| {
+                        self.polyhedron.faces[*i].len() == n_gon
+                            && self.face_variant_mapping[*i] == variant
+                    })
+                    .enumerate()
+                {
+                    self.scene.face_instance_map[face_index] =
+                        (self.scene.instanced_pcbs.len() - 1, instance_index)
+                }
             }
         }
         // let instances = face_instances(&self.polyhedron, &self.context);
