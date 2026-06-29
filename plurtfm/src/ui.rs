@@ -4,7 +4,7 @@
 
 use log::info;
 use three_d::{Cull, Vec3, Viewport, Zero, pick};
-use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
+use wasm_bindgen::{JsError, JsValue, UnwrapThrowExt, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
 use crate::Interface;
@@ -122,10 +122,21 @@ impl Interface {
                 "clicked on face with geometry id {}, instance id {}",
                 p.geometry_id, p.instance_id
             );
+            // unwrap bc from raycast, so must be possible, unless code buggy
+            let face_id = self
+                .face_index(p.geometry_id as usize, p.instance_id as usize)
+                .ok_or(JsError::new(&format!(
+                    "face ({},{}) not exist, have {:?}",
+                    p.geometry_id, p.instance_id, self.scene.face_instance_map
+                )))?;
+            let variant = self.face_variant_mapping[face_id];
+            // also need find out which pcb that is, but for now, we'll magic number 2
+            self.face_variant_mapping[face_id] = (variant + 1) % 2;
             // need to find out which face was clicked, based on geometry/instance ids..
             // maybe it's worth keeping around some mapping? it's kind of load-order dependent...
             // ah, wait geometryId ofc directly corresponds to the place in self.scene.faces
             // but those are a flat-map version
+            self.add_mesh_to_faces()?;
         }
         Ok(())
     }
