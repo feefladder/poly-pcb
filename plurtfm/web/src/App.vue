@@ -68,7 +68,7 @@ watch(selected, async (name) => {
                 @request_pcb="
                     (e: CustomEvent<PcbId>) => {
                         console.log(
-                            `pcb ${e.detail.n_gon}-${e.detail.variant} requested `,
+                            `pcb ${e.detail.n_gon}-${e.detail.variant} requested`,
                             e,
                         );
                         const n_gon = e.detail.n_gon;

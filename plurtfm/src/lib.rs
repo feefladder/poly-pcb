@@ -1,9 +1,10 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
-use crate::polyhedron::Polyhedron;
+use crate::{polyhedron::Polyhedron, ui::PcbId};
 use colorous::{PAIRED, SINEBOW, VIRIDIS};
 use log::{debug, info};
 use rusqlite::{Connection, Result};
+use serde::{Deserialize, Serialize};
 use three_d::*;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
@@ -48,6 +49,8 @@ pub struct Interface {
     face_variant_mapping: Vec<usize>,
     /// super single-source-of-truth-and-ignore-face_variant_mapping_plz_or_something
     instances: Vec<Instances>,
+    /// map that goes (n_gon, variant) -> index in instances
+    instance_map: BTreeMap<PcbId, usize>,
 }
 
 /// The scene is well, the scene
@@ -78,10 +81,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
     let connection = Connection::open(":memory:").map_err(|e| e.to_string())?;
     let len = db_bytes.len() as i64;
 
-    debug!(
-        "loading database: {}",
-        String::from_utf8_lossy(&db_bytes[..10])
-    );
+    // SAFETY: e
     unsafe {
         sqlite_wasm_rs::sqlite3_deserialize(
             connection.handle().cast(),
@@ -119,20 +119,6 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         PhysicalMaterial::new(&context, &CpuMaterial::default()),
     );
 
-    // // glb is big deps, stl smol
-    // // http is huge deps, bc we don't understand that fetch api exists?
-    // let key = "assets/3-01.stl";
-    // let stl_bytes = fetch(key).await?;
-    // let mut loaded: CpuMesh =
-    //     three_d_asset::io::deserialize(key, stl_bytes).map_err(|e| e.to_string())?;
-
-    // loaded.transform(Mat4::from_translation(vec3(0.0, 3.0f32.sqrt() / 2.0, 0.0)));
-    // loaded.transform(Mat4::from_scale(2.0 / 50.0));
-    // model = Gm::new(
-    //     Mesh::new(&context, &loaded),
-    //     PhysicalMaterial::new(&context, &CpuMaterial::default()),
-    // );
-
     // add light
     let ambient = AmbientLight::new(&context, 0.05, Srgba::WHITE);
     let point = PointLight::new(
@@ -162,9 +148,25 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         // only populated when there is something
         face_variant_mapping: Vec::new(),
         instances: Vec::new(),
+        instance_map: BTreeMap::new(),
     };
 
     Ok(iface)
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum VariantMap {
+    /// Per n-gon mapping
+    ///
+    /// for truncated tetrahedron, this will only set triangles:
+    /// ```
+    /// VariantMap::PerNGon(BTreeMap::from([(3, vec![0,1,1,2])]))
+    /// ```
+    PerNGon(BTreeMap<usize, Vec<usize>>),
+    /// Global mapping
+    ///
+    /// just goes over all faces, with index per face.
+    Global(Vec<usize>),
 }
 
 #[wasm_bindgen]
@@ -194,12 +196,35 @@ impl Interface {
             );
     }
 
-    pub fn set_polyhedron(&mut self, poly: &str) -> Result<JsValue, JsError> {
-        info!("poly request for {poly}");
+    pub fn set_polyhedron(
+        &mut self,
+        poly: &str,
+        variants: Option<JsValue>,
+    ) -> Result<JsValue, JsError> {
         let new_poly = Polyhedron::load(&self.connection, &poly)?;
         self.face_variant_mapping.clear();
         self.face_variant_mapping.resize(new_poly.faces.len(), 0);
-
+        if let Some(v) = variants {
+            let vm = serde_wasm_bindgen::from_value::<VariantMap>(v)?;
+            match vm {
+                VariantMap::PerNGon(m) => {
+                    for (n, vars) in m {
+                        for (i, var) in new_poly
+                            .faces
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, f)| if f.len() == n { Some(i) } else { None })
+                            .zip(vars)
+                        {
+                            self.face_variant_mapping[i] = var;
+                        }
+                    }
+                }
+                VariantMap::Global(v) => {
+                    self.face_variant_mapping = v;
+                }
+            }
+        };
         let mut new_mesh = new_poly.cpu_mesh();
         new_mesh.compute_normals();
         let new_model = Gm::new(
@@ -208,16 +233,14 @@ impl Interface {
         );
         self.scene.model = new_model;
         self.polyhedron = new_poly;
-        self.add_mesh_to_faces()?;
+        self.update_instances()?;
         // so
         serde_wasm_bindgen::to_value(&self.missing_variants()).map_err(|e| JsError::from(e))
     }
 
     /// Load pcb stls into the simulation
     ///
-    /// needs to be organized as
-    /// `pcb = [nr_of_edges][variant]`
-    /// so to get second variant of pentagon, can do `pcbs[5][1]`
+    /// this re-initializes instances
     pub fn add_pcb(&mut self, n_gon: usize, variant: usize, data: Vec<u8>) -> Result<(), JsError> {
         // add None for non-existent variants
         while self.pcbs[n_gon].len() <= variant {
@@ -248,11 +271,26 @@ impl Interface {
                 0.0,
             )))?;
         }
-        self.pcbs[n_gon][variant] = Some(mesh);
+
         info!("successfully loaded stl for {key}");
         // side-effects, yay!
-        self.add_mesh_to_faces()?;
-        Ok(())
+        self.instance_map
+            .insert(PcbId { n_gon, variant }, self.instances.len());
+        self.instances.push(Instances {
+            colors: Some(Vec::new()),
+            ..Default::default()
+        });
+        let instanced_pcb = Gm::new(
+            InstancedMesh::new(
+                &self.context,
+                &self.instances[self.instances.len() - 1],
+                &mesh,
+            ),
+            PhysicalMaterial::default(),
+        );
+        self.scene.instanced_pcbs.push(instanced_pcb);
+        self.pcbs[n_gon][variant] = Some(mesh);
+        self.update_instances()
     }
 }
 
@@ -286,83 +324,34 @@ impl Interface {
         missing_variants
     }
 
-    pub fn add_mesh_to_faces(&mut self) -> Result<(), JsError> {
-        // This is slightly ugly now, because we re-upload the meshes, but I
-        // guess that's fine because it allows to update them or something
-        self.scene.instanced_pcbs.clear();
-        self.scene.face_instance_map.clear();
-        self.instances.clear();
-        self.scene
-            .face_instance_map
-            .resize(self.polyhedron.faces.len(), Default::default());
+    pub fn update_instances(&mut self) -> Result<(), JsError> {
         let mut fallback_mesh = CpuMesh::sphere(8);
         fallback_mesh.transform(Mat4::from_scale(0.1))?;
-        // go through all n of n-gon and all variants.
-        // INVARIANT: self.scene.faces order is depended on for face-click detection
-        // this is a flattened version of self.pcbs
-        // that's actually sensible
-        // so range(self.faces, 4) = {
-        //  let start = self.pcbs.iter().take(4).map(|n| n.len()).sum();
-        //  let len = self.pcbs[4].len();
-        //  start..start+len
-        // }
-        for n_gon in 3..=10 {
-            for (variant, mesh) in self.pcbs[n_gon]
+        // just iterate through the map
+        for (pcb_id, instance_idx) in &self.instance_map {
+            let transformations: Vec<Mat4> = self
+                .polyhedron
+                .face_transforms
                 .iter()
                 .enumerate()
-                .filter(|(_, m)| m.is_some())
-            {
-                let transformations: Vec<Mat4> = self
-                    .polyhedron
-                    .face_transforms
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| {
-                        self.polyhedron.faces[*i].len() == n_gon
-                            && self.face_variant_mapping[*i] == variant
+                .filter(|(i, _)| {
+                    self.polyhedron.faces[*i].len() == pcb_id.n_gon
+                        && self.face_variant_mapping[*i] == pcb_id.variant
+                })
+                .map(|(_, tr)| *tr)
+                .collect();
+            self.instances[*instance_idx].colors = Some(
+                (0..transformations.len())
+                    .map(|i| {
+                        let c = VIRIDIS.eval_rational(i, transformations.len());
+                        Srgba::new_opaque(c.r, c.g, c.b)
                     })
-                    .map(|(_, tr)| *tr)
-                    .collect();
-                let instances = Instances {
-                    colors: Some(
-                        (0..transformations.len())
-                            .map(|i| {
-                                let color = SINEBOW.eval_rational(i, transformations.len()); // PAIRED[i % PAIRED.len()]; // VIRIDIS.eval_rational(i, transformations.len());
-                                Srgba::new_opaque(color.r, color.g, color.b)
-                            })
-                            .collect(),
-                    ),
-                    transformations,
-                    ..Default::default()
-                };
-                self.instances.push(instances.clone());
-                let instanced_gm = Gm::new(
-                    // TODO: don't upload to GPU every f'ing time, but set_transforms on the instancedmeshes
-                    // that'll also alllow for a better mapping
-                    InstancedMesh::new(&self.context, &instances, mesh.as_ref().unwrap()),
-                    PhysicalMaterial {
-                        albedo: Srgba::WHITE,
-                        ..Default::default()
-                    },
-                );
-                self.scene.instanced_pcbs.push(instanced_gm);
-                for (instance_index, (face_index, _transform)) in self
-                    .polyhedron
-                    .face_transforms
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| {
-                        self.polyhedron.faces[*i].len() == n_gon
-                            && self.face_variant_mapping[*i] == variant
-                    })
-                    .enumerate()
-                {
-                    self.scene.face_instance_map[face_index] =
-                        (self.scene.instanced_pcbs.len() - 1, instance_index)
-                }
-            }
+                    .collect(),
+            );
+            self.instances[*instance_idx].transformations = transformations;
+
+            self.scene.instanced_pcbs[*instance_idx].set_instances(&self.instances[*instance_idx])
         }
-        // let instances = face_instances(&self.polyhedron, &self.context);
         self.render();
         Ok(())
     }
