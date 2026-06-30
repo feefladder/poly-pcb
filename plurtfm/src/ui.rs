@@ -3,13 +3,14 @@
 //! anything responding to events, because it was growing too big
 
 use log::info;
-use three_d::{Cull, Srgba, Vec3, Viewport, Zero, pick};
+use three_d::{Cull, InnerSpace, Srgba, Vec3, Viewport, Zero, pick};
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
 use crate::Interface;
 
 #[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PcbId {
     pub n_gon: usize,
     pub variant: usize,
@@ -79,38 +80,13 @@ impl Interface {
         if event.buttons() & 1 == 0 {
             return Ok(());
         } else {
-            let rect = self.canvas.get_bounding_client_rect();
-            // is f64 bc css pixels are fake, scale by canvas size to get back to physics the gpu understands
-            let x = ((event.client_x() as f64 - rect.left()) * self.canvas.width() as f64
-                / rect.width()) as f32;
-
-            let y = ((rect.bottom() - event.client_y() as f64) * self.canvas.height() as f64
-                / rect.height()) as f32;
-
-            if let Some(p) = pick(
-                &self.context,
-                &self.scene.camera,
-                (x, y),
-                self.scene.instanced_pcbs.iter().flat_map(|f| f.into_iter()),
-                Cull::Back,
-            )? {
-                info!(
-                    "clicked on face with geometry id {}, instance id {}",
-                    p.geometry_id, p.instance_id
-                );
-                self.instances[p.geometry_id as usize]
-                    .colors
-                    .as_mut()
-                    .unwrap()[p.instance_id as usize] = Srgba::BLACK;
-                self.scene.instanced_pcbs[p.geometry_id as usize]
-                    .set_instances(&self.instances[p.geometry_id as usize]);
-                self.render();
-            }
+            // optionally do something here on click-drag
         }
+        let frac = 42.0 / self.scene.camera.position().magnitude();
         self.scene.camera.rotate_around(
             Vec3::zero(),
-            event.movement_x() as f32 / 42.0,
-            event.movement_y() as f32 / 42.0,
+            event.movement_x() as f32 / frac,
+            event.movement_y() as f32 / frac,
         );
         self.render();
         Ok(())
@@ -193,7 +169,7 @@ impl Interface {
             // maybe it's worth keeping around some mapping? it's kind of load-order dependent...
             // ah, wait geometryId ofc directly corresponds to the place in self.scene.faces
             // but those are a flat-map version
-            self.add_mesh_to_faces()?;
+            self.update_instances()?;
         }
         Ok(())
     }
