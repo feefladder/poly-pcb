@@ -1,14 +1,71 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, Ref } from "vue";
-import { Interface, PcbId } from "./pkg/plurtfm.js";
+import { ref, onMounted, watch, type Ref } from "vue";
+import { Interface, PcbId, VarId } from "./pkg/plurtfm.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
+
+// make match rust
+type VariantMap = { PerNGon: [number, number[]][] } | { Global: number[] };
 
 const polyhedra: Ref<string[]> = ref([]);
 const pcbLoader = ref<PcbLoader | null>(null);
 const canvas = ref();
 const selected = ref("");
+const variant_map: Ref<VariantMap> = ref({
+    PerNGon: [[3, [0, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1]]],
+});
 
 let iface: Interface;
+
+window.addEventListener("hashchange", () => {
+    console.log(location.hash);
+    apply_url();
+});
+
+function update_url(name: string, map: VariantMap) {
+    let hash = `#/${name.replace(/ /g, "-")}`;
+
+    if ("PerNGon" in map) {
+        const params = new URLSearchParams();
+
+        for (const [nGon, variants] of map.PerNGon) {
+            params.set(
+                nGon.toString(),
+                variants.map((v) => v.toString(16)).join(""),
+            );
+        }
+
+        const query = params.toString();
+        if (query) {
+            hash += `?${query}`;
+        }
+    }
+
+    history.replaceState(null, "", hash);
+}
+
+function apply_url() {
+    const hash = decodeURIComponent(location.hash.slice(2)); // remove "#/"
+
+    const [poly_url, query = ""] = hash.split("?", 2);
+    const polyhedron = poly_url?.toLowerCase().replace(/[-_ ]+/g, " ");
+
+    const entries: [number, number[]][] = [];
+
+    for (const [nGon, encoded] of new URLSearchParams(query)) {
+        entries.push([Number(nGon), [...encoded].map((c) => parseInt(c, 16))]);
+    }
+
+    if (entries.length > 0) {
+        variant_map.value = { PerNGon: entries };
+    }
+
+    if (polyhedron && polyhedra.value.includes(polyhedron)) {
+        selected.value = polyhedron;
+    } else {
+        console.log("could not find ", polyhedron);
+        selected.value = "tetrahedron";
+    }
+}
 
 onMounted(async () => {
     const wasm = await import("./pkg/plurtfm.js");
@@ -26,24 +83,57 @@ onMounted(async () => {
         iface.render();
     });
     ro.observe(canvas.value);
-
-    const hash = decodeURIComponent(window.location.hash.slice(1));
-    const humanized = hash.toLowerCase().replace(/[-_ ]+/g, " ");
-    if (polyhedra.value.includes(humanized)) {
-        selected.value = humanized;
-    } else {
-        selected.value = "tetrahedron";
-    }
+    apply_url();
 });
 
-watch(selected, async (name) => {
-    if (iface) {
-        let missing_variants: Array<Array<number>> = iface.set_polyhedron(name);
-        console.log("missing variants", missing_variants);
-        iface.render();
-        pcbLoader.value!.requestMany(missing_variants);
+watch(
+    [selected, variant_map],
+    async ([new_name, new_map]) => {
+        if (iface) {
+            console.log("setting poly with variant map ", variant_map.value);
+            let missing_variants: Array<Array<number>> = iface.set_polyhedron(
+                new_name,
+                new_map,
+            );
+            console.log("missing variants", missing_variants);
+            pcbLoader.value!.requestMany(missing_variants);
+        }
+        update_url(new_name, new_map);
+    },
+    { deep: true },
+);
+
+function on_request_pcb(var_id: VarId) {
+    console.log("request pcb", var_id);
+
+    // check if there is actually an stl for the requested variant???? otherwise cycle to 0
+    const { nth_ngon, pcb_id } = var_id;
+    let { n_gon, variant } = pcb_id;
+
+    if (!pcbLoader.value?.pcb_exists(n_gon, variant)) {
+        console.warn(`pcb ${n_gon} version ${variant} does not exist`);
+        variant = 0;
     }
-});
+
+    if (!("PerNGon" in variant_map.value)) {
+        return;
+    }
+
+    let entry = variant_map.value.PerNGon.find(([n]) => n === n_gon);
+
+    if (!entry) {
+        entry = [n_gon, []];
+        variant_map.value.PerNGon.push(entry);
+    }
+
+    const variants = entry[1];
+
+    while (variants.length <= nth_ngon) {
+        variants.push(0);
+    }
+
+    variants[nth_ngon] = variant;
+}
 </script>
 
 <template>
@@ -66,15 +156,8 @@ watch(selected, async (name) => {
                 @keydown="iface.on_key"
                 @next_polyhedron="selected = $event.detail"
                 @request_pcb="
-                    (e: CustomEvent<PcbId>) => {
-                        console.log(
-                            `pcb ${e.detail.n_gon}-${e.detail.variant} requested`,
-                            e,
-                        );
-                        const n_gon = e.detail.n_gon;
-                        const arr: number[][] = [];
-                        arr[n_gon] = [e.detail.variant];
-                        pcbLoader?.requestMany(arr);
+                    (e) => {
+                        on_request_pcb(e.detail);
                     }
                 "
                 @pointerdown="iface?.on_pointer_down"

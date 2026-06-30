@@ -1,6 +1,13 @@
 import { ref } from "vue";
-import { Interface } from "./pkg/plurtfm";
+import { Interface } from "./pkg/plurtfm.js";
 
+const assets = import.meta.glob("./assets/*.stl", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
+
+/// Load an asset. Can be anything really
 export async function loadAsset(path: string) {
   const url = new URL(`./assets/${path}`, import.meta.url);
   console.log("fetching ", url);
@@ -26,6 +33,18 @@ export class PcbLoader {
 
   constructor(iface: Interface) {
     this.iface = iface;
+  }
+
+  pcb_exists(n_gon: number, variant: number): boolean {
+    console.log(import.meta.glob("./assets/*.stl"));
+    console.log(import.meta.glob("./assets/*.stl", { eager: true }));
+    const key = `./assets/${n_gon}-${variant.toString(2).padStart(2, "0")}.stl`;
+    if (!(key in assets)) {
+      console.log(key, assets.keys);
+      return false;
+    } else {
+      return true;
+    }
   }
 
   requestMany(missingVariants: number[][]) {
