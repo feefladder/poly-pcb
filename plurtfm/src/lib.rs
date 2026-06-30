@@ -47,7 +47,7 @@ pub struct Interface {
     // pcb_transforms: [Vec<Vec<Mat4>>; 11],
     /// Mapping from polygon face index -> pcb variant
     face_variant_mapping: Vec<usize>,
-    /// super single-source-of-truth-and-ignore-face_variant_mapping_plz_or_something
+    /// instances (transform + color) of pcbs on the polyhedron
     instances: Vec<Instances>,
     /// map that goes (n_gon, variant) -> index in instances
     instance_map: BTreeMap<PcbId, usize>,
@@ -116,7 +116,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
     // Create model
     let model = Gm::new(
         Mesh::new(&context, &CpuMesh::cube()),
-        PhysicalMaterial::new(&context, &CpuMaterial::default()),
+        PhysicalMaterial::new_transparent(&context, &CpuMaterial::default()),
     );
 
     // add light
@@ -162,7 +162,7 @@ pub enum VariantMap {
     /// ```
     /// VariantMap::PerNGon(BTreeMap::from([(3, vec![0,1,1,2])]))
     /// ```
-    PerNGon(BTreeMap<usize, Vec<usize>>),
+    PerNGon(Vec<(usize, Vec<usize>)>),
     /// Global mapping
     ///
     /// just goes over all faces, with index per face.
@@ -187,6 +187,7 @@ impl Interface {
             .render(
                 &self.scene.camera,
                 self.scene.instanced_pcbs.iter().flat_map(|f| f.into_iter()),
+                //.chain(self.scene.model.into_iter()),
                 &self
                     .scene
                     .lights
@@ -225,8 +226,16 @@ impl Interface {
                 }
             }
         };
-        let mut new_mesh = new_poly.cpu_mesh();
-        new_mesh.compute_normals();
+        let centroid = new_poly.vertices.iter().sum::<Vec3>() / new_poly.vertices.len() as f32;
+        let avg_r = new_poly
+            .vertices
+            .iter()
+            .map(|v| (v - centroid).magnitude())
+            .sum::<f32>()
+            / new_poly.vertices.len() as f32;
+        let mut new_mesh = CpuMesh::sphere(8);
+        new_mesh.transform(Mat4::from_scale(avg_r))?;
+        new_mesh.transform(Mat4::from_translation(centroid))?;
         let new_model = Gm::new(
             Mesh::new(&self.context, &new_mesh),
             self.scene.model.material.clone(),
@@ -273,7 +282,7 @@ impl Interface {
         }
 
         info!("successfully loaded stl for {key}");
-        // side-effects, yay!
+        // register the stl in self, so we can reference it
         self.instance_map
             .insert(PcbId { n_gon, variant }, self.instances.len());
         self.instances.push(Instances {

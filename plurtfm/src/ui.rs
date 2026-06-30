@@ -3,7 +3,7 @@
 //! anything responding to events, because it was growing too big
 
 use log::info;
-use three_d::{Cull, InnerSpace, Srgba, Vec3, Viewport, Zero, pick};
+use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
@@ -14,6 +14,12 @@ use crate::Interface;
 pub struct PcbId {
     pub n_gon: usize,
     pub variant: usize,
+}
+
+#[wasm_bindgen]
+pub struct VarId {
+    pub nth_ngon: usize,
+    pub pcb_id: PcbId,
 }
 
 #[wasm_bindgen]
@@ -111,15 +117,13 @@ impl Interface {
     }
 
     pub fn on_click(&mut self, event: MouseEvent) -> Result<(), JsError> {
-        info!("mouse event happened: {event:?}");
         let rect = self.canvas.get_bounding_client_rect();
-
         // is f64 bc css pixels are fake, scale by canvas size to get back to physics the gpu understands
-        let x = ((event.client_x() as f64 - rect.left()) * self.canvas.width() as f64
-            / rect.width()) as f32;
+        let x =
+            ((event.x() as f64 - rect.left()) * self.canvas.width() as f64 / rect.width()) as f32;
 
-        let y = ((rect.bottom() - event.client_y() as f64) * self.canvas.height() as f64
-            / rect.height()) as f32;
+        let y = ((rect.bottom() - event.y() as f64) * self.canvas.height() as f64 / rect.height())
+            as f32;
 
         if let Some(p) = pick(
             &self.context,
@@ -143,33 +147,54 @@ impl Interface {
                 .ok_or(JsError::new("HELP!"))?;
             let n_gon = self.polyhedron.faces[face_id].len();
             let current_variant = self.face_variant_mapping[face_id];
-            if self.face_variant_mapping[face_id] == self.pcbs[n_gon].len() - 1 {
-                let e_detail = CustomEventInit::new();
-                e_detail.set_detail(
-                    &PcbId {
-                        n_gon,
-                        variant: current_variant + 1,
-                    }
-                    .into(),
-                );
+            let variant = current_variant + 1;
+            // so js-side we keep per-ngon, so need find out which one this is
+            // just dispatch an event and let js update our state
+            let nth_ngon = self
+                .polyhedron
+                .faces
+                .iter()
+                .enumerate()
+                .filter(|(i, v)| v.len() == n_gon)
+                .position(|(i, v)| i == face_id)
+                .ok_or(JsError::new(&format!(
+                    "could not find position of {n_gon}-gon at face {face_id}"
+                )))?;
+            let e_detail = CustomEventInit::new();
+            e_detail.set_detail(
+                &VarId {
+                    nth_ngon,
+                    pcb_id: PcbId { n_gon, variant },
+                }
+                .into(),
+            );
+            // if self.pcbs[n_gon].get(req_variant).unwrap_or(&None).is_none() {
+            //     info!("did not find pcb {req_variant}");
+            //     let e_detail = CustomEventInit::new();
+            //     e_detail.set_detail(
+            //         &PcbId {
+            //             n_gon,
+            //             variant: current_variant + 1,
+            //         }
+            //         .into(),
+            //     );
+            self.canvas
+                .dispatch_event(
+                    &CustomEvent::new_with_event_init_dict("request_pcb", &e_detail).unwrap(),
+                )
+                .unwrap();
+            //     self.face_variant_mapping[face_id] = 0;
+            //     // now it would actually be nice to somewhere have a "this instances array is this n-var" so we don't have to re-upload meshes
+            // } else {
+            //     self.face_variant_mapping[face_id] = current_variant + 1;
+            // }
+            // // also need find out which pcb that is, but for now, we'll magic number 2
 
-                self.canvas
-                    .dispatch_event(
-                        &CustomEvent::new_with_event_init_dict("request_pcb", &e_detail).unwrap(),
-                    )
-                    .unwrap();
-                self.face_variant_mapping[face_id] = 0;
-                // now it would actually be nice to somewhere have a "this instances array is this n-var" so we don't have to re-upload meshes
-            } else {
-                self.face_variant_mapping[face_id] = current_variant + 1;
-            }
-            // also need find out which pcb that is, but for now, we'll magic number 2
-
-            // need to find out which face was clicked, based on geometry/instance ids..
-            // maybe it's worth keeping around some mapping? it's kind of load-order dependent...
-            // ah, wait geometryId ofc directly corresponds to the place in self.scene.faces
-            // but those are a flat-map version
-            self.update_instances()?;
+            // // need to find out which face was clicked, based on geometry/instance ids..
+            // // maybe it's worth keeping around some mapping? it's kind of load-order dependent...
+            // // ah, wait geometryId ofc directly corresponds to the place in self.scene.faces
+            // // but those are a flat-map version
+            // self.update_instances()?;
         }
         Ok(())
     }
