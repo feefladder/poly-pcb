@@ -74,7 +74,7 @@ pub enum PlurEvent {
 pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interface, JsValue> {
     // Set up panic hook for better error messages in the browser
     console_error_panic_hook::set_once();
-    console_log::init_with_level(log::Level::Trace).unwrap();
+    let _ = console_log::init_with_level(log::Level::Trace);
 
     info!("logging works");
     // Open an in-memory database
@@ -182,12 +182,50 @@ impl Interface {
     pub fn render(&mut self) {
         // actually draw something?
         let screen = RenderTarget::screen(&self.context, self.canvas.width(), self.canvas.height());
+        // build debugging normal arrows
+        let positions = Positions::F32(
+            self.polyhedron
+                .face_transforms
+                .iter()
+                .flat_map(|t| {
+                    [
+                        (t * vec4(0.0, -0.01, 0.0, 1.0)).truncate(),
+                        (t * vec4(0.0, 0.01, 0.0, 1.0)).truncate(),
+                        (t * vec4(0.0, 0.00, 1.0, 1.0)).truncate(),
+                    ]
+                })
+                .collect(),
+        );
+
+        let gm = Wireframe::new_from_cpu_mesh(
+            &self.context,
+            &CpuMesh {
+                positions,
+                ..Default::default()
+            },
+            1.0,
+            Srgba::BLUE,
+        );
+        let mut objects: Vec<&dyn Object> = self
+            .scene
+            .instanced_pcbs
+            .iter()
+            .flat_map(|f| f.into_iter())
+            .collect();
+        // render face normals?
+        if false {
+            objects.extend(gm.into_iter());
+        }
+        // render poly mesh?
+        if false {
+            objects.extend(self.scene.model.into_iter())
+        }
+
         screen
             .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
             .render(
                 &self.scene.camera,
-                self.scene.instanced_pcbs.iter().flat_map(|f| f.into_iter()),
-                //.chain(self.scene.model.into_iter()),
+                objects,
                 &self
                     .scene
                     .lights

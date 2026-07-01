@@ -10,7 +10,6 @@ const assets = import.meta.glob("./assets/*.stl", {
 /// Load an asset. Can be anything really
 export async function loadAsset(path: string) {
   const url = new URL(`./assets/${path}`, import.meta.url);
-  console.log("fetching ", url);
   const r = await fetch(url);
 
   if (r.status === 404) return null;
@@ -36,11 +35,8 @@ export class PcbLoader {
   }
 
   pcb_exists(n_gon: number, variant: number): boolean {
-    console.log(import.meta.glob("./assets/*.stl"));
-    console.log(import.meta.glob("./assets/*.stl", { eager: true }));
     const key = `./assets/${n_gon}-${variant.toString(2).padStart(2, "0")}.stl`;
     if (!(key in assets)) {
-      console.log(key, assets.keys);
       return false;
     } else {
       return true;
@@ -74,8 +70,6 @@ export class PcbLoader {
   }
 
   async loadOne(nGon: number, variant: number) {
-    console.log(this);
-    console.log(this.busy);
     this.busy = true;
     this.loadingCount++;
 

@@ -1,3 +1,4 @@
+use log::info;
 use rusqlite::Connection;
 use std::collections::HashMap;
 use three_d::*;
@@ -51,6 +52,8 @@ impl Polyhedron {
             vertices.push(vec3(x, y, z));
         }
 
+        let poly_centroid = vertices.iter().sum::<Vec3>() / vertices.len() as f32;
+
         let mut stmt = conn.prepare(
             "
         SELECT face, vertex, idx
@@ -96,13 +99,13 @@ impl Polyhedron {
         let mut face_transforms = Vec::with_capacity(faces.len());
 
         for face in faces.iter() {
-            let centroid: Vec3 =
+            let face_centroid: Vec3 =
                 face.iter().map(|idx| vertices[*idx as usize]).sum::<Vec3>() / face.len() as f32;
+
             let v0 = vertices[face[0] as usize];
             let v1 = vertices[face[1] as usize];
             let v2 = vertices[face[2] as usize];
 
-            // Local x-axis
             let x = (v1 - v0).normalize();
             // Local y-axis
             let mut y = (v2 - v1).normalize();
@@ -110,13 +113,18 @@ impl Polyhedron {
             y = (y - x * x.dot(y)).normalize();
             // Local z-axis
             // don't need normalize, cuz x,y orthonormal
-            let z = x.cross(y);
-            // now [x y z] is rotation matrix
+            let mut z = x.cross(y);
+
+            if (z.dot(face_centroid - poly_centroid) > 0.0) {
+                z = -z;
+            }
+
+            // now [x y z] is rotation matrix, [w] is translate
             face_transforms.push(Mat4::from_cols(
-                vec4(x.x, x.y, x.z, 0.0),
-                vec4(y.x, y.y, y.z, 0.0),
-                vec4(z.x, z.y, z.z, 0.0),
-                vec4(centroid.x, centroid.y, centroid.z, 1.0),
+                x.extend(0.0),
+                y.extend(0.0),
+                z.extend(0.0),
+                face_centroid.extend(1.0),
             ));
         }
 

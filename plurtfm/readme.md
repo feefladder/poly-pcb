@@ -16,4 +16,12 @@ from this directory:
 wasm-pack build --target web --out-dir web/src/pkg --debug &&  python3 -m http.server
 ```
 
-Ya, Iknow, then all html and stuff is in the project directory, ugly but oks.
+Ya, I know, then all html and stuff is in the project directory, ugly but oks.
+
+```
+cargo watch -s "wasm-pack build . --target web --dev --out-dir web/src/pkg"
+```
+and in separate terminal in `web/`:
+```
+npm run dev
+```
