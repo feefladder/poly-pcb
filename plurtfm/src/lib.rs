@@ -28,7 +28,7 @@ pub struct Interface {
     /// need also store somewhere their transforms?
     /// maximum is 10-gon, want nice indexing: face_meshes[3] = triangles
     /// I don't care about unused first 3 units and 7 and 9
-    pcbs: [Vec<Option<CpuMesh>>; 11],
+    pcbs: [Vec<Option<CpuModel>>; 11],
     // /// I guess also transform per stl
     // /// so these are kinda...
     // /// nah, I think re-calculate them is enough?
@@ -59,7 +59,7 @@ pub struct Interface {
 pub struct Scene {
     camera: Camera,
     model: Gm<Mesh, PhysicalMaterial>,
-    instanced_pcbs: Vec<Gm<InstancedMesh, PhysicalMaterial>>,
+    instanced_pcbs: Vec<InstancedModel<PhysicalMaterial>>,
     lights: Vec<Box<dyn Light>>,
     face_instance_map: Vec<(usize, usize)>,
 }
@@ -294,29 +294,33 @@ impl Interface {
             self.pcbs[n_gon].push(None);
         }
         let key = &format!("{}-{:b}.stl", n_gon, variant);
-        let mut mesh: CpuMesh = three_d_asset::io::deserialize(key, data)?;
+        let mut model: CpuModel = three_d_asset::io::deserialize(key, data)?;
 
-        mesh.transform(Mat4::from_scale(2.0 / 50.0))?;
-        if n_gon == 3 {
-            // kicad exports the center as like the board origin which is calculated from bounding box
-            // so we transform it on y-axis by 1/3-1/2=1/6
-            // because real center of triangle is 1/3 of its height
-            mesh.transform(Mat4::from_translation(vec3(
-                0.0,
-                // size  diff           height-side ratio
-                2.0 * 1.0 / 6.0 * 3.0f32.sqrt() / 2.0,
-                0.0,
-            )))?;
-        } else if n_gon == 5 {
-            // same story here, but ofc with pentagon it's more difficult eh
-            mesh.transform(Mat4::from_translation(vec3(
-                0.0,
-                // https://en.wikipedia.org/wiki/Pentagon
-                // side length * (og - correct)
-                2.0 * ((5.0 + 2.0 * 5.0f32.sqrt()).sqrt() / 4.0
-                    - 1.0 / (2.0 * (5.0 - 20.0f32.sqrt()).sqrt())),
-                0.0,
-            )))?;
+        for prim in &mut model.geometries {
+            // prim.transformation = prim.transformation * Mat4::from_scale(2.0 / 50.0)
+            // * if n_gon == 3 {
+            //     // kicad exports the center as like the board origin which is calculated from bounding box
+            //     // so we transform it on y-axis by 1/3-1/2=1/6
+            //     // because real center of triangle is 1/3 of its height
+            //     Mat4::from_translation(vec3(
+            //         0.0,
+            //         // size  diff           height-side ratio
+            //         2.0 * 1.0 / 6.0 * 3.0f32.sqrt() / 2.0,
+            //         0.0,
+            //     ))
+            // } else if n_gon == 5 {
+            //     // same story here, but ofc with pentagon it's more difficult eh
+            //     Mat4::from_translation(vec3(
+            //         0.0,
+            //         // https://en.wikipedia.org/wiki/Pentagon
+            //         // side length * (og - correct)
+            //         2.0 * ((5.0 + 2.0 * 5.0f32.sqrt()).sqrt() / 4.0
+            //             - 1.0 / (2.0 * (5.0 - 20.0f32.sqrt()).sqrt())),
+            //         0.0,
+            //     ))
+            // } else {
+            //     Mat4::one()
+            // }
         }
 
         info!("successfully loaded stl for {key}");
@@ -327,16 +331,13 @@ impl Interface {
             colors: Some(Vec::new()),
             ..Default::default()
         });
-        let instanced_pcb = Gm::new(
-            InstancedMesh::new(
-                &self.context,
-                &self.instances[self.instances.len() - 1],
-                &mesh,
-            ),
-            PhysicalMaterial::default(),
-        );
+        let instanced_pcb = InstancedModel::new(
+            &self.context,
+            &self.instances[self.instances.len() - 1],
+            &model,
+        )?;
         self.scene.instanced_pcbs.push(instanced_pcb);
-        self.pcbs[n_gon][variant] = Some(mesh);
+        self.pcbs[n_gon][variant] = Some(model);
         self.update_instances()
     }
 }
@@ -397,7 +398,9 @@ impl Interface {
             );
             self.instances[*instance_idx].transformations = transformations;
 
-            self.scene.instanced_pcbs[*instance_idx].set_instances(&self.instances[*instance_idx])
+            self.scene.instanced_pcbs[*instance_idx]
+                .iter_mut()
+                .for_each(|mp| mp.geometry.set_instances(&self.instances[*instance_idx]));
         }
         self.render();
         Ok(())
