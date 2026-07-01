@@ -83,10 +83,12 @@ impl Interface {
 
     pub fn on_pointer_move(&mut self, event: PointerEvent) -> Result<(), JsError> {
         // Only rotate while the primary button is held.
-        if event.buttons() & 1 == 0 {
+        if (event.buttons() & 1 == 0) && event.pointer_type() != "touch" {
             return Ok(());
         } else {
             // optionally do something here on click-drag
+            // like setting faces' colors to black for example
+            // for example, I'd say
         }
         let frac = 42.0 / self.scene.camera.position().magnitude();
         self.scene.camera.rotate_around(
@@ -168,33 +170,11 @@ impl Interface {
                 }
                 .into(),
             );
-            // if self.pcbs[n_gon].get(req_variant).unwrap_or(&None).is_none() {
-            //     info!("did not find pcb {req_variant}");
-            //     let e_detail = CustomEventInit::new();
-            //     e_detail.set_detail(
-            //         &PcbId {
-            //             n_gon,
-            //             variant: current_variant + 1,
-            //         }
-            //         .into(),
-            //     );
             self.canvas
                 .dispatch_event(
                     &CustomEvent::new_with_event_init_dict("request_pcb", &e_detail).unwrap(),
                 )
                 .unwrap();
-            //     self.face_variant_mapping[face_id] = 0;
-            //     // now it would actually be nice to somewhere have a "this instances array is this n-var" so we don't have to re-upload meshes
-            // } else {
-            //     self.face_variant_mapping[face_id] = current_variant + 1;
-            // }
-            // // also need find out which pcb that is, but for now, we'll magic number 2
-
-            // // need to find out which face was clicked, based on geometry/instance ids..
-            // // maybe it's worth keeping around some mapping? it's kind of load-order dependent...
-            // // ah, wait geometryId ofc directly corresponds to the place in self.scene.faces
-            // // but those are a flat-map version
-            // self.update_instances()?;
         }
         Ok(())
     }

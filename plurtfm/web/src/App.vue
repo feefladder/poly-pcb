@@ -17,7 +17,6 @@ const variant_map: Ref<VariantMap> = ref({
 let iface: Interface;
 
 window.addEventListener("hashchange", () => {
-    console.log(location.hash);
     apply_url();
 });
 
@@ -70,7 +69,6 @@ function apply_url() {
 onMounted(async () => {
     const wasm = await import("./pkg/plurtfm.js");
 
-    console.log(canvas.value);
     await wasm.default();
     let db = await loadAsset("polydb.sqlite3");
     iface = wasm.init_iface(canvas.value!, db!);
@@ -156,8 +154,8 @@ function on_request_pcb(var_id: VarId) {
                 @keydown="iface.on_key"
                 @next_polyhedron="selected = $event.detail"
                 @request_pcb="
-                    (e) => {
-                        on_request_pcb(e.detail);
+                    (e: CustomEventInit<VarId>) => {
+                        on_request_pcb(e.detail!);
                     }
                 "
                 @pointerdown="iface?.on_pointer_down"
