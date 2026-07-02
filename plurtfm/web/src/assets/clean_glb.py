@@ -35,6 +35,13 @@ for filename in os.listdir(SCRIPT_DIR):
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
 
+        # apply transforms so components don't fly everwhere
+        bpy.ops.object.transform_apply(
+            location=True,
+            rotation=True,
+            scale=True,
+        )
+
         bpy.ops.object.mode_set(mode="EDIT")
         bpy.ops.mesh.select_all(action="SELECT")
         bpy.ops.mesh.remove_doubles(
