@@ -27,20 +27,18 @@ window.addEventListener("hashchange", () => {
 function update_url(name: string, map: VariantMap) {
     let hash = `#/${name.replace(/ /g, "-")}`;
 
-    if ("PerNGon" in map) {
-        const params = new URLSearchParams();
+    const params = new URLSearchParams();
 
-        for (const [nGon, variants] of map) {
-            params.set(
-                nGon.toString(),
-                variants.map((v) => v.toString(16)).join(""),
-            );
-        }
+    for (const [nGon, variants] of map) {
+        params.set(
+            nGon.toString(),
+            variants.map((v) => v.toString(16)).join(""),
+        );
+    }
 
-        const query = params.toString();
-        if (query) {
-            hash += `?${query}`;
-        }
+    const query = params.toString();
+    if (query) {
+        hash += `?${query}`;
     }
 
     history.replaceState(null, "", hash);
