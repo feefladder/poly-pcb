@@ -504,7 +504,7 @@
       "plot": "out/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "pentagon.stl",
+      "step": "../plurtfm/web/src/assets/5-01.glb",
       "svg": "",
       "vrml": ""
     },

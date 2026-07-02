@@ -504,7 +504,7 @@
       "plot": "svg/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "square.stl",
+      "step": "../plurtfm/web/src/assets/4-01.glb",
       "svg": "",
       "vrml": ""
     },

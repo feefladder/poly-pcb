@@ -508,7 +508,7 @@
       "plot": "out/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "antenna.glb",
+      "step": "../plurtfm/web/src/assets/3-100.glb",
       "svg": "",
       "vrml": ""
     },

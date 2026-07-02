@@ -465,7 +465,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "hexagon.kicad_pro",
+    "filename": "hexagon-.kicad_pro",
     "version": 3
   },
   "net_settings": {
@@ -504,7 +504,7 @@
       "plot": "",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "../plurtfm/web/src/assets/6-00.glb",
+      "step": "../plurtfm/web/src/assets/6-01.glb",
       "svg": "",
       "vrml": ""
     },

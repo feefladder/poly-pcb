@@ -406,7 +406,7 @@
 		(descr "Through hole straight pin header, 1x05, 2.54mm pitch, single row")
 		(tags "Through hole pin header THT 1x05 2.54mm single row")
 		(property "Reference" "J6"
-			(at 0.000001 -2.379999 126)
+			(at 0 -2.379999 126)
 			(layer "F.SilkS")
 			(uuid "8119cf87-e65a-4c0e-996f-4d79a31ae636")
 			(effects
@@ -1268,7 +1268,7 @@
 		(descr "Through hole straight pin header, 1x05, 2.54mm pitch, single row")
 		(tags "Through hole pin header THT 1x05 2.54mm single row")
 		(property "Reference" "J1"
-			(at 0.000001 -2.379999 126)
+			(at 0 -2.379999 126)
 			(layer "F.SilkS")
 			(uuid "084645ce-f04c-4a94-b0ae-adddaf977673")
 			(effects
@@ -2187,7 +2187,7 @@
 			(uuid "c0192378-5f50-48b8-b071-888d16678621")
 		)
 		(fp_line
-			(start -1.38 1.27)
+			(start -1.380001 1.27)
 			(end -1.380002 11.540002)
 			(stroke
 				(width 0.12)
@@ -2197,7 +2197,7 @@
 			(uuid "483b21ca-7658-48af-8312-3831d0edf5cd")
 		)
 		(fp_line
-			(start -1.38 1.27)
+			(start -1.380001 1.27)
 			(end 1.38 1.27)
 			(stroke
 				(width 0.12)
@@ -3282,7 +3282,7 @@
 		(descr "5.0mm x 5.0mm Addressable RGB LED NeoPixel, https://cdn-shop.adafruit.com/product-files/1138/SK6812+LED+datasheet+.pdf")
 		(tags "LED RGB NeoPixel PLCC-4 5050")
 		(property "Reference" "D4"
-			(at 0 -3.5 72)
+			(at -0.000001 -3.5 72)
 			(layer "F.SilkS")
 			(uuid "ccece72e-b236-45e1-a6c9-8af4dc94bd59")
 			(effects
@@ -3385,7 +3385,7 @@
 			(uuid "c63c29a1-3f4a-4172-b0a7-f12482c7a93f")
 		)
 		(fp_line
-			(start -3.5 -2.3)
+			(start -3.5 -2.299999)
 			(end -3.5 2.75)
 			(stroke
 				(width 0.12)
@@ -3396,7 +3396,7 @@
 		)
 		(fp_line
 			(start -3.050001 -2.750004)
-			(end -3.5 -2.3)
+			(end -3.5 -2.299999)
 			(stroke
 				(width 0.12)
 				(type default)
@@ -4152,7 +4152,7 @@
 		(descr "5.0mm x 5.0mm Addressable RGB LED NeoPixel, https://cdn-shop.adafruit.com/product-files/1138/SK6812+LED+datasheet+.pdf")
 		(tags "LED RGB NeoPixel PLCC-4 5050")
 		(property "Reference" "D14"
-			(at 0 -3.5 72)
+			(at -0.000001 -3.5 72)
 			(layer "F.SilkS")
 			(uuid "139a20a0-1081-4229-ab49-59493b8fb1bd")
 			(effects
@@ -4206,7 +4206,7 @@
 		(attr smd)
 		(fp_line
 			(start -3.050001 -2.750004)
-			(end -3.5 -2.3)
+			(end -3.5 -2.299999)
 			(stroke
 				(width 0.12)
 				(type default)
@@ -4215,7 +4215,7 @@
 			(uuid "aa866b8e-3b79-4c1e-94b4-0e44713068fe")
 		)
 		(fp_line
-			(start -3.5 -2.3)
+			(start -3.5 -2.299999)
 			(end -3.5 2.75)
 			(stroke
 				(width 0.12)
@@ -4523,7 +4523,7 @@
 			(uuid "2031f598-994a-4c91-b5e9-490985d7274d")
 		)
 		(fp_line
-			(start -1.38 1.27)
+			(start -1.380001 1.27)
 			(end 1.38 1.27)
 			(stroke
 				(width 0.12)
@@ -4533,7 +4533,7 @@
 			(uuid "55c89af1-77fa-45a5-b892-feb2eaf81c6d")
 		)
 		(fp_line
-			(start -1.38 1.27)
+			(start -1.380001 1.27)
 			(end -1.380002 11.540002)
 			(stroke
 				(width 0.12)
@@ -4728,7 +4728,7 @@
 		(descr "5.0mm x 5.0mm Addressable RGB LED NeoPixel, https://cdn-shop.adafruit.com/product-files/1138/SK6812+LED+datasheet+.pdf")
 		(tags "LED RGB NeoPixel PLCC-4 5050")
 		(property "Reference" "D5"
-			(at 0 -3.5 162)
+			(at -0.000001 -3.5 162)
 			(layer "F.SilkS")
 			(uuid "f9148a07-707f-4885-acec-06b5ad4902ec")
 			(effects
@@ -4781,7 +4781,7 @@
 		(sheetfile "decagon.kicad_sch")
 		(attr smd)
 		(fp_line
-			(start -3.5 -2.3)
+			(start -3.5 -2.299999)
 			(end -3.5 2.75)
 			(stroke
 				(width 0.12)
@@ -4802,7 +4802,7 @@
 		)
 		(fp_line
 			(start -3.050001 -2.750004)
-			(end -3.5 -2.3)
+			(end -3.5 -2.299999)
 			(stroke
 				(width 0.12)
 				(type default)
@@ -7243,7 +7243,7 @@
 		(descr "5.0mm x 5.0mm Addressable RGB LED NeoPixel, https://cdn-shop.adafruit.com/product-files/1138/SK6812+LED+datasheet+.pdf")
 		(tags "LED RGB NeoPixel PLCC-4 5050")
 		(property "Reference" "D15"
-			(at 0 -3.5 162)
+			(at -0.000001 -3.5 162)
 			(layer "F.SilkS")
 			(uuid "231dae1c-849b-4b08-8d6d-00e054a50769")
 			(effects
@@ -7337,7 +7337,7 @@
 		)
 		(fp_line
 			(start -3.050001 -2.750004)
-			(end -3.5 -2.3)
+			(end -3.5 -2.299999)
 			(stroke
 				(width 0.12)
 				(type default)
@@ -7356,7 +7356,7 @@
 			(uuid "b83f4f0f-3365-40ea-8b57-79bef8c0e35e")
 		)
 		(fp_line
-			(start -3.5 -2.3)
+			(start -3.5 -2.299999)
 			(end -3.5 2.75)
 			(stroke
 				(width 0.12)

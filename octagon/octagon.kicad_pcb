@@ -7335,7 +7335,7 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_soldermask_bridges)
 		(fp_poly
 			(pts
-				(xy -0.15 0.75) (xy 0.150001 0.750001) (xy 0.15 -0.75) (xy -0.150001 -0.750001)
+				(xy -0.150001 0.75) (xy 0.150001 0.750001) (xy 0.150001 -0.75) (xy -0.150001 -0.750001)
 			)
 			(stroke
 				(width 0)
@@ -7609,7 +7609,7 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_soldermask_bridges)
 		(fp_poly
 			(pts
-				(xy -0.15 0.75) (xy 0.150001 0.750001) (xy 0.15 -0.75) (xy -0.150001 -0.750001)
+				(xy -0.150001 0.75) (xy 0.150001 0.750001) (xy 0.150001 -0.75) (xy -0.150001 -0.750001)
 			)
 			(stroke
 				(width 0)
@@ -7744,7 +7744,7 @@
 			(uuid "c82abd91-82f9-489d-850d-67c2884ac13c")
 		)
 		(pad "1" smd custom
-			(at -0.650001 -0.000001 247.5)
+			(at -0.650001 -0.000002 247.5)
 			(size 1 0.5)
 			(layers "B.Cu" "B.Mask")
 			(net 21 "Net-(J4-Pin_3)")
@@ -7780,7 +7780,7 @@
 			(uuid "c08926b4-12ae-4195-a8ab-7170ccc4c2f8")
 		)
 		(pad "2" smd custom
-			(at 0.650001 0.000001 247.5)
+			(at 0.650001 0.000002 247.5)
 			(size 1 0.5)
 			(layers "B.Cu" "B.Mask")
 			(net 20 "Net-(J3-Pin_3)")
@@ -8705,7 +8705,7 @@
 		(attr exclude_from_pos_files exclude_from_bom allow_soldermask_bridges)
 		(fp_poly
 			(pts
-				(xy -0.15 0.75) (xy 0.150001 0.750001) (xy 0.15 -0.75) (xy -0.150001 -0.750001)
+				(xy -0.150001 0.75) (xy 0.150001 0.750001) (xy 0.150001 -0.75) (xy -0.150001 -0.750001)
 			)
 			(stroke
 				(width 0)
