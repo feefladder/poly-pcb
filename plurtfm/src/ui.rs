@@ -2,7 +2,6 @@
 //!
 //! anything responding to events, because it was growing too big
 
-use exn::OptionExt;
 use log::info;
 use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
@@ -161,8 +160,8 @@ impl Interface {
                 .faces
                 .iter()
                 .enumerate()
-                .filter(|(i, v)| v.len() == n_gon)
-                .position(|(i, v)| i == face_id)
+                .filter(|(_, v)| v.len() == n_gon)
+                .position(|(i, _)| i == face_id)
                 .ok_or(JsError::new(&format!(
                     "could not find position of {n_gon}-gon at face {face_id}"
                 )))?;

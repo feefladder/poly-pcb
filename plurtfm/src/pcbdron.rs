@@ -1,13 +1,12 @@
 use std::{error::Error, iter::FlatMap};
 
-use derive_more::{Display, Error};
+use derive_more::Display;
 use exn::ResultExt;
 use log::info;
 use three_d::{
-    Context, CpuMaterial, CpuModel, Gm, InstancedModel, Instances, Mat4, Mesh, Model, Object, One,
+    Context, CpuMaterial, CpuModel, Gm, InstancedModel, Instances, Mat4, Mesh, Object, One,
     PhysicalMaterial, Srgba,
 };
-use wasm_bindgen::JsError;
 
 use crate::{VariantMap, polyhedron::Polyhedron, ui::PcbId};
 
@@ -228,6 +227,7 @@ impl MultiPcbdron {
                 .iter_variant(pcb_id)
                 .map(|idx| self.pcbdron.polyhedron.face_transforms[idx])
                 .collect();
+            self.instances[i].colors = None;
             pcb_model
                 .iter_mut()
                 .for_each(|pm| pm.geometry.set_instances(&self.instances[i]));

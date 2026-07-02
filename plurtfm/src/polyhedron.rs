@@ -1,6 +1,5 @@
 use derive_more::Display;
 use exn::ResultExt;
-use log::info;
 use rusqlite::Connection;
 use std::{collections::HashMap, error::Error};
 use three_d::*;
@@ -29,7 +28,7 @@ impl Polyhedron {
         self.faces
             .iter()
             .enumerate()
-            .filter(move |(i, f)| f.len() == n_sides)
+            .filter(move |(_, f)| f.len() == n_sides)
             .map(|(i, _)| i)
     }
 
@@ -130,7 +129,7 @@ impl Polyhedron {
             // don't need normalize, cuz x,y orthonormal
             let mut z = x.cross(y);
 
-            if (z.dot(face_centroid - poly_centroid) > 0.0) {
+            if z.dot(face_centroid - poly_centroid) > 0.0 {
                 z = -z;
             }
 

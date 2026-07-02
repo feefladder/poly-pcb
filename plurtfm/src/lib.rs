@@ -1,15 +1,12 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use crate::{pcbdron::MultiPcbdron, polyhedron::Polyhedron, ui::PcbId};
-use colorous::{PAIRED, SINEBOW, VIRIDIS};
-use log::{debug, info};
+use log::info;
 use rusqlite::{Connection, Result};
 use serde::{Deserialize, Serialize};
 use three_d::{
-    AmbientLight, Attenuation, Camera, ClearState, Context, CpuGeometry, CpuMaterial, CpuMesh,
-    CpuModel, Geometry, Gm, InnerSpace, InstancedModel, Instances, Light, Mat4, Mesh, Object,
-    PhysicalMaterial, PointLight, Positions, RenderTarget, Srgba, Vec3, Viewport, Wireframe,
-    degrees, vec3, vec4,
+    AmbientLight, Attenuation, Camera, ClearState, Context, CpuGeometry, CpuModel, Light, Mat4,
+    PointLight, RenderTarget, Srgba, Viewport, degrees, vec3,
 };
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
@@ -94,17 +91,11 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         0.1,
         100.0,
     );
-    // Create model
-    let model = Gm::new(
-        Mesh::new(&context, &CpuMesh::cube()),
-        PhysicalMaterial::new_transparent(&context, &CpuMaterial::default()),
-    );
-
     // add light
-    let ambient = AmbientLight::new(&context, 0.05, Srgba::WHITE);
+    let ambient = AmbientLight::new(&context, 0.25, Srgba::WHITE);
     let point = PointLight::new(
         &context,
-        0.5,
+        1.0,
         Srgba::WHITE,
         vec3(-20.0, -20.0, 20.0),
         Attenuation::default(),
@@ -221,6 +212,7 @@ impl Interface {
         };
         // self.update_instances()?;
         // so
+        self.render();
         serde_wasm_bindgen::to_value(&self.missing_variants()).map_err(|e| e.to_string().into())
     }
 
