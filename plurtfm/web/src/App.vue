@@ -3,16 +3,20 @@ import { ref, onMounted, watch, type Ref } from "vue";
 import { Interface, PcbId, VarId } from "./pkg/plurtfm.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
+if (import.meta.hot) {
+    import.meta.hot.accept(() => {
+        location.reload();
+    });
+}
+
 // make match rust
-type VariantMap = { PerNGon: [number, number[]][] } | { Global: number[] };
+type VariantMap = [number, number[]][];
 
 const polyhedra: Ref<string[]> = ref([]);
 const pcbLoader = ref<PcbLoader | null>(null);
 const canvas = ref();
 const selected = ref("");
-const variant_map: Ref<VariantMap> = ref({
-    PerNGon: [[3, [0, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1]]],
-});
+const variant_map: Ref<VariantMap> = ref([[3, [4, 4, 2, 0, 3]]]);
 
 let iface: Interface;
 
@@ -26,7 +30,7 @@ function update_url(name: string, map: VariantMap) {
     if ("PerNGon" in map) {
         const params = new URLSearchParams();
 
-        for (const [nGon, variants] of map.PerNGon) {
+        for (const [nGon, variants] of map) {
             params.set(
                 nGon.toString(),
                 variants.map((v) => v.toString(16)).join(""),
@@ -55,7 +59,7 @@ function apply_url() {
     }
 
     if (entries.length > 0) {
-        variant_map.value = { PerNGon: entries };
+        variant_map.value = entries;
     }
 
     if (polyhedron && polyhedra.value.includes(polyhedron)) {
@@ -108,20 +112,17 @@ function on_request_pcb(var_id: VarId) {
     const { nth_ngon, pcb_id } = var_id;
     let { n_gon, variant } = pcb_id;
 
+    console.log("requested pcb for ", n_gon, variant);
     if (!pcbLoader.value?.pcb_exists(n_gon, variant)) {
         console.warn(`pcb ${n_gon} version ${variant} does not exist`);
         variant = 0;
     }
 
-    if (!("PerNGon" in variant_map.value)) {
-        return;
-    }
-
-    let entry = variant_map.value.PerNGon.find(([n]) => n === n_gon);
+    let entry = variant_map.value.find(([n]) => n === n_gon);
 
     if (!entry) {
         entry = [n_gon, []];
-        variant_map.value.PerNGon.push(entry);
+        variant_map.value.push(entry);
     }
 
     const variants = entry[1];

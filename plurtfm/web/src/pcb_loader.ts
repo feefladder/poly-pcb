@@ -1,11 +1,18 @@
 import { ref } from "vue";
 import { Interface } from "./pkg/plurtfm.js";
 
-const assets = import.meta.glob("./assets/*.stl", {
-  eager: true,
-  query: "?url",
-  import: "default",
-}) as Record<string, string>;
+const assets = {
+  ...import.meta.glob("./assets/*.glb", {
+    eager: true,
+    query: "?url",
+    import: "default",
+  }),
+  ...import.meta.glob("./assets/*.stl", {
+    eager: true,
+    query: "?url",
+    import: "default",
+  }),
+} as Record<string, string>;
 
 /// Load an asset. Can be anything really
 export async function loadAsset(path: string) {
@@ -35,8 +42,9 @@ export class PcbLoader {
   }
 
   pcb_exists(n_gon: number, variant: number): boolean {
-    const key = `./assets/${n_gon}-${variant.toString(2).padStart(2, "0")}.stl`;
-    if (!(key in assets)) {
+    const base = `${n_gon}-${variant.toString(2).padStart(2, "0")}`;
+    const stl = `./assets/${base}.stl`;
+    if (!(stl in assets || `./assets/${base}.glb` in assets)) {
       return false;
     } else {
       return true;
@@ -74,16 +82,23 @@ export class PcbLoader {
     this.loadingCount++;
 
     try {
-      const pcb = await loadAsset(
-        `${nGon}-${variant.toString(2).padStart(2, "0")}.stl`,
-      );
+      const base = `${nGon}-${variant.toString(2).padStart(2, "0")}`;
 
-      if (pcb === null) {
+      let pcb;
+      let name;
+      if (`./assets/${base}.glb` in assets) {
+        name = `${base}.glb`;
+        console.log("loading GLB!", base);
+        pcb = await loadAsset(name);
+      } else if (`./assets/${base}.stl` in assets) {
+        name = `${base}.stl`;
+        pcb = await loadAsset(name);
+      } else {
         console.log(`No STL for ${nGon}-${variant}`);
         return;
       }
 
-      this.iface.add_pcb(nGon, variant, pcb);
+      this.iface.add_pcb(nGon, variant, pcb!, name);
       this.loaded.add(`${nGon}-${variant}`);
     } finally {
       const key = `${nGon}-${variant}`;

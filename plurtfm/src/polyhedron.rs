@@ -1,8 +1,11 @@
+use derive_more::Display;
+use exn::ResultExt;
 use log::info;
 use rusqlite::Connection;
-use std::collections::HashMap;
+use std::{collections::HashMap, error::Error};
 use three_d::*;
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Polyhedron {
     pub name: String,
     /// vertices in 3d space
@@ -17,7 +20,19 @@ pub struct Polyhedron {
     pub face_transforms: Vec<Mat4>,
 }
 
+#[derive(Debug, Display, Clone)]
+pub struct PolyError(String);
+impl Error for PolyError {}
+
 impl Polyhedron {
+    pub fn iter_ngon(&self, n_sides: usize) -> impl Iterator<Item = usize> {
+        self.faces
+            .iter()
+            .enumerate()
+            .filter(move |(i, f)| f.len() == n_sides)
+            .map(|(i, _)| i)
+    }
+
     pub fn load(conn: &Connection, longname: &str) -> rusqlite::Result<Polyhedron> {
         let poly_id: i64 = conn.query_row(
             "SELECT id FROM Polyhedron WHERE longname = ?",
@@ -164,5 +179,29 @@ impl Polyhedron {
             indices: Indices::U32(self.triangulate().into_iter().flatten().collect()),
             ..Default::default()
         }
+    }
+
+    pub fn sphere(
+        &self,
+        context: &Context,
+        material: PhysicalMaterial,
+    ) -> exn::Result<Gm<Mesh, PhysicalMaterial>, PolyError> {
+        let centroid = self.vertices.iter().sum::<Vec3>() / self.vertices.len() as f32;
+        let avg_r = self
+            .vertices
+            .iter()
+            .map(|v| (v - centroid).magnitude())
+            .sum::<f32>()
+            / self.vertices.len() as f32;
+        let mut new_mesh = CpuMesh::sphere(8);
+        let msg = PolyError("Could not create sphere for poly".to_string());
+        new_mesh
+            .transform(Mat4::from_scale(avg_r))
+            .or_raise(|| msg.clone())?;
+        new_mesh
+            .transform(Mat4::from_translation(centroid))
+            .or_raise(|| msg)?;
+        let new_model = Gm::new(Mesh::new(context, &new_mesh), material);
+        Ok(new_model)
     }
 }
