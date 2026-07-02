@@ -2,6 +2,7 @@
 //!
 //! anything responding to events, because it was growing too big
 
+use exn::OptionExt;
 use log::info;
 use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
@@ -62,7 +63,12 @@ impl Interface {
 
     pub fn next_polyhedron(&mut self) -> Result<(), JsError> {
         let polyhedra = self.polyhedron_names()?;
-        if let Some(i) = polyhedra.iter().position(|n| **n == self.polyhedron.name) {
+        if let Some(i) = polyhedra.iter().position(|n| {
+            self.scene
+                .pcbdrons
+                .pcbdrons()
+                .any(|p| p.polyhedron.name == *n)
+        }) {
             let next_polyhedron = &polyhedra[(i + 1) % polyhedra.len()];
             let e_detail = CustomEventInit::new();
             e_detail.set_detail(&next_polyhedron.into());
@@ -131,28 +137,26 @@ impl Interface {
             &self.context,
             &self.scene.camera,
             (x, y),
-            self.scene.instanced_pcbs.iter().flat_map(|f| f.into_iter()),
+            self.scene.pcbdrons.into_iter(),
             Cull::Back,
         )? {
             info!(
                 "clicked on face with geometry id {}, instance id {}",
                 p.geometry_id, p.instance_id
             );
-            // unwrap bc from raycast, so must be possible, unless code buggy
-            let transform =
-                self.instances[p.geometry_id as usize].transformations[p.instance_id as usize];
             let face_id = self
-                .polyhedron
-                .face_transforms
-                .iter()
-                .position(|t| *t == transform)
-                .ok_or(JsError::new("HELP!"))?;
-            let n_gon = self.polyhedron.faces[face_id].len();
-            let current_variant = self.face_variant_mapping[face_id];
+                .scene
+                .pcbdrons
+                .pick(p.geometry_id, p.instance_id)
+                .ok_or(JsError::new("could not locate clicked geometry"))?;
+            info!("which corresponds to face n. {face_id} on pcbdron 0");
+            let pcbdron = self.scene.pcbdrons.pcbdrons().nth(0).unwrap();
+            let n_gon = pcbdron.polyhedron.faces[face_id].len();
+            let current_variant = pcbdron.variant_map[face_id];
             let variant = current_variant + 1;
             // so js-side we keep per-ngon, so need find out which one this is
             // just dispatch an event and let js update our state
-            let nth_ngon = self
+            let nth_ngon = pcbdron
                 .polyhedron
                 .faces
                 .iter()
