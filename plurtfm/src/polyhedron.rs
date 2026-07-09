@@ -189,7 +189,7 @@ impl Polyhedron {
             }
         }
 
-        poly.find_path(0);
+        // poly.find_path(0);
         Ok(poly)
     }
 
