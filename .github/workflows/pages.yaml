@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - plurtfm # Change if your default branch is different
+      - trunk
 
 jobs:
   build-and-deploy:
