@@ -17,7 +17,6 @@ log = "0.4.33"
 rusqlite = "0.40.1"
 serde = "1.0.228"
 serde-wasm-bindgen = "0.6.5"
-sqlite-wasm-rs = "0.5.5"
 three-d = { version = "0.19.0", default-features = false }
 three-d-asset = {version = "0.10.0", features = ["stl", "gltf"] }
 wasm-bindgen = "0.2.125"
@@ -38,3 +37,6 @@ web-sys = {version = "0.3.102", features = [
     "PointerEvent",
     "WheelEvent",
 ]}
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+sqlite-wasm-rs = "0.5.5"

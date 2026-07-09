@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{pcbdron::MultiPcbdron, polyhedron::Polyhedron, ui::PcbId};
+use crate::{pcbdron::MultiPcbdron, polyhedron::Polyhedron};
 use log::info;
 use rusqlite::{Connection, Result};
 use serde::{Deserialize, Serialize};
@@ -9,11 +9,26 @@ use three_d::{
     PointLight, RenderTarget, Srgba, Viewport, degrees, vec3,
 };
 use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
 
 mod pcbdron;
 mod polyhedron;
+#[cfg(target_arch = "wasm32")]
 mod ui;
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PcbId {
+    pub n_gon: usize,
+    pub variant: usize,
+}
+
+#[wasm_bindgen]
+pub struct VarId {
+    pub nth_ngon: usize,
+    pub pcb_id: PcbId,
+}
 
 /// The interface is the entrypoint for wasm
 ///
@@ -24,6 +39,7 @@ pub struct Interface {
     #[allow(unused)] // need to keep alive backing memory during db connection
     backing_bytes: Vec<u8>,
     scene: Scene,
+    #[cfg(target_arch = "wasm32")]
     canvas: HtmlCanvasElement,
     context: Context,
     /// different stls per polygon, this is template
@@ -49,6 +65,7 @@ pub enum PlurEvent {
 }
 
 #[wasm_bindgen]
+#[cfg(target_arch = "wasm32")]
 pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interface, JsValue> {
     // Set up panic hook for better error messages in the browser
     console_error_panic_hook::set_once();
@@ -92,10 +109,10 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         100.0,
     );
     // add light
-    let ambient = AmbientLight::new(&context, 0.25, Srgba::WHITE);
+    let ambient = AmbientLight::new(&context, 0.5, Srgba::WHITE);
     let point = PointLight::new(
         &context,
-        1.0,
+        2.0,
         Srgba::WHITE,
         vec3(-20.0, -20.0, 20.0),
         Attenuation::default(),
@@ -131,6 +148,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
 pub struct VariantMap(Vec<(usize, Vec<usize>)>);
 
 #[wasm_bindgen]
+#[cfg(target_arch = "wasm32")]
 impl Interface {
     pub fn polyhedron_names(&mut self) -> Result<Vec<String>, JsError> {
         let mut stmt = self.connection.prepare("SELECT longname FROM Polyhedron")?;

@@ -10,7 +10,7 @@ use three_d::{
     PhysicalMaterial, Srgba,
 };
 
-use crate::{VariantMap, polyhedron::Polyhedron, ui::PcbId};
+use crate::{PcbId, VariantMap, polyhedron::Polyhedron};
 
 /// A PcbGon knows where which Pcb variant is on a polyhedron
 ///
@@ -81,6 +81,10 @@ impl Error for MultiPcbdronError {}
 impl MultiPcbdron {
     pub fn pcbdrons(&self) -> impl Iterator<Item = &Pcbdron> {
         std::iter::once(&self.pcbdron)
+    }
+
+    pub fn pcbdrons_mut(&mut self) -> impl Iterator<Item = &mut Pcbdron> {
+        std::iter::once(&mut self.pcbdron)
     }
 
     /// from geometry_id, instance_id, get face id
@@ -237,7 +241,7 @@ impl MultiPcbdron {
         Ok(())
     }
 
-    fn update_instances(&mut self) -> exn::Result<(), MultiPcbdronError> {
+    pub fn update_instances(&mut self) -> exn::Result<(), MultiPcbdronError> {
         // clear-and-rebuild for now, would be better to remove-insert later
         // first build own instances, then upload to GPU by changing pcb_models
         for (i, pcb_model) in self.pcb_models.iter_mut().enumerate() {

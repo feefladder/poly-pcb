@@ -7,20 +7,7 @@ use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
-use crate::Interface;
-
-#[wasm_bindgen]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PcbId {
-    pub n_gon: usize,
-    pub variant: usize,
-}
-
-#[wasm_bindgen]
-pub struct VarId {
-    pub nth_ngon: usize,
-    pub pcb_id: PcbId,
-}
+use crate::{Interface, PcbId, VarId};
 
 #[wasm_bindgen]
 impl Interface {
@@ -149,35 +136,50 @@ impl Interface {
                 .pick(p.geometry_id, p.instance_id)
                 .ok_or(JsError::new("could not locate clicked geometry"))?;
             info!("which corresponds to face n. {face_id} on pcbdron 0");
-            let pcbdron = self.scene.pcbdrons.pcbdrons().nth(0).unwrap();
-            let n_gon = pcbdron.polyhedron.faces[face_id].len();
-            let current_variant = pcbdron.variant_map[face_id];
-            let variant = current_variant + 1;
-            // so js-side we keep per-ngon, so need find out which one this is
-            // just dispatch an event and let js update our state
-            let nth_ngon = pcbdron
-                .polyhedron
-                .faces
-                .iter()
-                .enumerate()
-                .filter(|(_, v)| v.len() == n_gon)
-                .position(|(i, _)| i == face_id)
-                .ok_or(JsError::new(&format!(
-                    "could not find position of {n_gon}-gon at face {face_id}"
-                )))?;
-            let e_detail = CustomEventInit::new();
-            e_detail.set_detail(
-                &VarId {
-                    nth_ngon,
-                    pcb_id: PcbId { n_gon, variant },
+
+            if event.ctrl_key() {
+                let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
+                info!("while holding ctrl");
+                for v in pcbdron.variant_map.iter_mut() {
+                    if *v & 4 == 4 {
+                        *v ^= 4
+                    }
                 }
-                .into(),
-            );
-            self.canvas
-                .dispatch_event(
-                    &CustomEvent::new_with_event_init_dict("request_pcb", &e_detail).unwrap(),
-                )
-                .unwrap();
+                pcbdron.variant_map[face_id] = 4;
+                pcbdron.polyhedron.find_path(face_id);
+                self.scene.pcbdrons.update_instances();
+                self.render();
+            } else {
+                let pcbdron = self.scene.pcbdrons.pcbdrons().nth(0).unwrap();
+                let n_gon = pcbdron.polyhedron.faces[face_id].len();
+                let current_variant = pcbdron.variant_map[face_id];
+                let variant = current_variant + 1;
+                // so js-side we keep per-ngon, so need find out which one this is
+                // just dispatch an event and let js update our state
+                let nth_ngon = pcbdron
+                    .polyhedron
+                    .faces
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, v)| v.len() == n_gon)
+                    .position(|(i, _)| i == face_id)
+                    .ok_or(JsError::new(&format!(
+                        "could not find position of {n_gon}-gon at face {face_id}"
+                    )))?;
+                let e_detail = CustomEventInit::new();
+                e_detail.set_detail(
+                    &VarId {
+                        nth_ngon,
+                        pcb_id: PcbId { n_gon, variant },
+                    }
+                    .into(),
+                );
+                self.canvas
+                    .dispatch_event(
+                        &CustomEvent::new_with_event_init_dict("request_pcb", &e_detail).unwrap(),
+                    )
+                    .unwrap();
+            }
         }
         Ok(())
     }
