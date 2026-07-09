@@ -109,10 +109,10 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         100.0,
     );
     // add light
-    let ambient = AmbientLight::new(&context, 0.5, Srgba::WHITE);
+    let ambient = AmbientLight::new(&context, 0.8, Srgba::WHITE);
     let point = PointLight::new(
         &context,
-        2.0,
+        5.0,
         Srgba::WHITE,
         vec3(-20.0, -20.0, 20.0),
         Attenuation::default(),
@@ -201,7 +201,7 @@ impl Interface {
         // }
 
         screen
-            .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0))
+            .clear(ClearState::color_and_depth(0.1, 0.1, 0.2, 0.0, 1.0))
             .render(
                 &self.scene.camera,
                 self.scene.pcbdrons.into_iter(),
