@@ -15,7 +15,7 @@ type VariantMap = [number, number[]][];
 const polyhedra: Ref<string[]> = ref([]);
 const pcbLoader = ref<PcbLoader | null>(null);
 const canvas = ref();
-const selected = ref("");
+const selected = ref("tetrahedron");
 const variant_map: Ref<VariantMap> = ref([[3, [4, 4, 2, 0, 3]]]);
 
 let iface: Interface;
@@ -49,7 +49,6 @@ function apply_url() {
 
     const [poly_url, query = ""] = hash.split("?", 2);
     const polyhedron = poly_url?.toLowerCase().replace(/[-_ ]+/g, " ");
-
     const entries: [number, number[]][] = [];
 
     for (const [nGon, encoded] of new URLSearchParams(query)) {
@@ -60,7 +59,20 @@ function apply_url() {
         variant_map.value = entries;
     }
 
-    if (polyhedron && polyhedra.value.includes(polyhedron)) {
+    if (
+        polyhedron &&
+        polyhedra.value.includes(polyhedron) &&
+        selected.value != polyhedron
+    ) {
+        console.log(
+            "setting polyhedron to ",
+            polyhedron,
+            " because ",
+            selected.value,
+            " is different ",
+            polyhedron == selected.value,
+            polyhedron === selected.value,
+        );
         selected.value = polyhedron;
     } else {
         console.log("could not find ", polyhedron);

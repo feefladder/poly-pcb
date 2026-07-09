@@ -188,7 +188,8 @@ impl Polyhedron {
                 poly.face_transforms[face_idx] = Polyhedron::face_transform(&face, &poly.vertices);
             }
         }
-        info!("searching for path {:?}", poly.find_path(0));
+
+        poly.find_path(0);
         // poly.make_path(0)?;
         Ok(poly)
     }
@@ -295,6 +296,12 @@ impl Polyhedron {
             },
         ) {
             info!("found path {path:?}");
+
+            // update face transforms
+            for visit in &path {
+                self.face_transforms[visit.face_idx] =
+                    Self::face_transform(&self.faces[visit.face_idx], &self.vertices);
+            }
             Some(path)
         } else {
             None
