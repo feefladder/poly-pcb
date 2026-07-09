@@ -1,6 +1,6 @@
 use derive_more::Display;
 use exn::{OptionExt, ResultExt};
-use log::{error, info};
+use log::info;
 use rusqlite::Connection;
 use std::{
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
@@ -188,6 +188,7 @@ impl Polyhedron {
                 poly.face_transforms[face_idx] = Polyhedron::face_transform(&face, &poly.vertices);
             }
         }
+        info!("searching for path {:?}", poly.find_path(0));
         // poly.make_path(0)?;
         Ok(poly)
     }
@@ -280,17 +281,20 @@ impl Polyhedron {
         Ok(new_model)
     }
 
-    pub fn find_path(&self, start_face_idx: usize) -> Option<Path> {
+    pub fn find_path(&mut self, start_face_idx: usize) -> Option<Path> {
         let mut path = Vec::with_capacity(self.faces.len() + 5);
+        let mut visited = vec![false; self.faces.len()];
         let start_face = &self.faces[start_face_idx];
 
         if self.dfs(
             &mut path,
+            &mut visited,
             PolygonVisit {
                 face_idx: start_face_idx,
                 edge: (start_face[0], start_face[1]),
             },
         ) {
+            info!("found path {path:?}");
             Some(path)
         } else {
             None
@@ -300,9 +304,25 @@ impl Polyhedron {
     /// Make a path, starting at the given face.
     ///
     /// If a path is found, will update self
-    fn dfs(&self, path: &mut Path, visit: PolygonVisit) -> bool {
+    fn dfs(&mut self, path: &mut Path, visited: &mut Vec<bool>, visit: PolygonVisit) -> bool {
+        if !visited[visit.face_idx] {
+            // rotate poly so we're entering on edge 0-1
+            visited[visit.face_idx] = true;
+            // winding direction is the same, so we only need to find the first
+            let rotate_amount = self.faces[visit.face_idx]
+                .iter()
+                .position(|vidx| *vidx == visit.edge.0)
+                .unwrap();
+            self.faces[visit.face_idx].rotate_left(rotate_amount);
+        }
         path.push(visit);
-        let face = &self.faces[visit.face_idx];
+
+        if visited.iter().all(|v| *v) {
+            info!("Found a path!");
+            return true;
+        }
+
+        let face = self.faces[visit.face_idx].to_owned();
         // for dfs we want to go left first, then cycle around the polygon.
         //
         // since stack is fifo, we go counter-clockwise to have the left added last
@@ -316,30 +336,73 @@ impl Polyhedron {
             .take(face.len() - 1);
 
         for edge in face_edges {
-            if path.iter().any(|visit| edge == visit.edge) {
+            if path.iter().any(|a_visit| edge == a_visit.edge) {
                 continue;
             }
             // also add a preference for unvisited faces
             let n_face_idx = self
                 .faces
                 .iter()
-                .position(|n_face| {
-                    n_face
-                        .iter()
-                        .zip(n_face.iter().cycle().skip(1))
-                        .position(|(start, end)| (*start, *end) == edge)
-                        .is_some()
+                .enumerate()
+                .position(|(i, n_face)| {
+                    i != visit.face_idx
+                        && n_face
+                            .iter()
+                            .zip(n_face.iter().cycle().skip(1))
+                            .position(|(start, end)| (*start, *end) == edge)
+                            .is_some()
                 })
                 .unwrap();
-            if path.iter().any(|visit| visit.face_idx == n_face_idx) {
+            if let Some(prev_visit) = path.iter().rfind(|a_visit| a_visit.face_idx == n_face_idx) {
                 // get neighbour face id
                 // Not sure why we need that though?
                 // maybe to check if we are in between two edges
                 //
-                // so the 02 13 case
+                // so the 02 13 case, which says 1 is illegal on an existing 02
+                // For that, we only need to check if any _later_ edges are in the path
+                // Since we rotate on first visit, this is correct
+                let n_face = &self.faces[n_face_idx];
+                let n = n_face
+                    .iter()
+                    .position(|vidx| prev_visit.edge.1 == *vidx)
+                    .unwrap();
+                if !(n..n_face.len()).any(|bla| {
+                    // check if path already contains that edge somewhere
+                    //
+                    // edges in path are stored clockwise relative to their face, so when searching,
+                    // need to search for the counter-clockwise equivalent. from this face
+                    let edge = (n_face[(bla + 1) % n_face.len()], n_face[bla]);
+                    path.iter().any(|v| v.edge == edge)
+                }) {
+                    if self.dfs(
+                        path,
+                        visited,
+                        PolygonVisit {
+                            face_idx: n_face_idx,
+                            edge,
+                        },
+                    ) {
+                        return true;
+                    }
+                }
+            } else {
+                if self.dfs(
+                    path,
+                    visited,
+                    PolygonVisit {
+                        face_idx: n_face_idx,
+                        edge,
+                    },
+                ) {
+                    return true;
+                }
             }
-            // At this point I'm seriously thinking that a recursive algorithm would be better...
         }
+        // if we've rotated the face, we were the ones visiting
+        if self.faces[visit.face_idx][0] == visit.edge.0 {
+            visited[visit.face_idx] = false;
+        }
+        path.pop();
         false
     }
 }

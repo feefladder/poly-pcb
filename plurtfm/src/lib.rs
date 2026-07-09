@@ -100,7 +100,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         vec3(-20.0, -20.0, 20.0),
         Attenuation::default(),
     );
-    let polyhedron = Polyhedron::load(&connection, "truncated cube").map_err(|e| e.to_string())?;
+    let polyhedron = Polyhedron::load(&connection, "tetrahedron").map_err(|e| e.to_string())?;
     let pcbdrons = MultiPcbdron::new(&context, polyhedron, &[], &VariantMap::default())
         .map_err(|e| e.to_string())?;
     // face_meshes[3].push(loaded);
