@@ -1,8 +1,8 @@
 use derive_more::Display;
-use exn::ResultExt;
+use exn::{OptionExt, ResultExt};
 use log::{info, warn};
 use rusqlite::Connection;
-use std::error::Error;
+use std::{collections::BTreeMap, error::Error};
 use three_d::*;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,14 +14,19 @@ pub struct Polyhedron {
     ///
     /// This is u32 because [`three_d::Indices`] is strongly typed and usize is u32 on wasm.
     pub faces: Vec<Vec<u32>>,
-    // /// Polyhedron edges, bidirectional map per face
-    // ///
-    // /// hmm, somehow it'd also be nice to know the edge's vertices...
-    // /// which isn't the faces
-    // /// ```
-    // ///
-    // /// ```
-    // pub edges: Vec<BTreeMap<usize, f32>>,
+    /// Polyhedron edges
+    ///
+    /// These know what faces they connect with dihedral angle
+    pub edges: Vec<PolyEdge>,
+    /// Graph between faces with edge index.
+    ///
+    /// So to get the edge that connects face 0 to 2, do
+    /// ```
+    /// poly.edges[poly.face_graph[0][2]]
+    ///
+    /// ```
+    pub face_graph: Vec<BTreeMap<usize, usize>>,
+
     /// per-face transforms
     /// ```
     /// // put glb on face `i`:
@@ -60,7 +65,7 @@ pub struct Polyhedron {
     /// also for assembly.
     ///
     /// And orientation of pcbs is done according to edge indices of the face normally.
-    pub edge_path: Vec<(usize, usize)>,
+    pub edge_path: Vec<PolygonCrossing>,
 }
 
 /// An edge of a polyhedron
@@ -70,11 +75,30 @@ pub struct Edge {
     pub end: u32,
 }
 
+/// An edge of a polyhedron that knows where it is
+///
+/// because it knows where it isn't
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PolyEdge {
+    /// Edge (canonical)
+    edge: Edge,
+    faces: [usize; 2],
+    dihedral: f32,
+}
+
 impl Edge {
-    fn rev(&self) -> Edge {
+    fn rev(self) -> Self {
         Edge {
             start: self.end,
             end: self.start,
+        }
+    }
+
+    fn sorted(self) -> Self {
+        if self.end < self.start {
+            self.rev()
+        } else {
+            self
         }
     }
 }
@@ -118,6 +142,8 @@ impl Polyhedron {
             name: longname.to_owned(),
             vertices: Vec::new(),
             faces: Vec::new(),
+            edges: Vec::new(),
+            face_graph: Vec::new(),
             face_transforms: Vec::new(),
             edge_path: Vec::new(),
         };
@@ -163,9 +189,9 @@ impl Polyhedron {
         poly.faces = stmt
             .query_map([poly_id], |row| {
                 Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, u32>(2)?,
                 ))
             })
             .or_raise(|| PolyError(format!("Could not load polyhedron {longname}")))?
@@ -183,6 +209,47 @@ impl Polyhedron {
                     .collect()
             })
             .collect();
+
+        let mut stmt = conn
+            .prepare(
+                "
+            SELECT
+                e.id,
+                MIN(l.id1) AS v0,
+                MAX(l.id1) AS v1,
+                e.dihedral,
+                e.face1,
+                e.face2
+            FROM Edge AS e
+            JOIN lattice AS l
+                ON e.poly = l.poly
+               AND e.id   = l.id2
+            WHERE e.poly = ?
+              AND l.dim1 = 0
+              AND l.dim2 = 1
+            GROUP BY e.id
+            ORDER BY e.id;
+            ",
+            )
+            .or_raise(|| PolyError(format!("Could not load polyhedron {longname}")))?;
+
+        poly.edges = stmt
+            .query_map([poly_id], |row| {
+                Ok(PolyEdge {
+                    edge: Edge {
+                        start: row.get::<_, u32>(1)?,
+                        end: row.get::<_, u32>(2)?,
+                    },
+                    faces: [
+                        row.get::<_, u32>(4)?.try_into().unwrap(),
+                        row.get::<_, u32>(5)?.try_into().unwrap(),
+                    ],
+                    dihedral: row.get::<_, f32>(3)?,
+                })
+            })
+            .or_raise(|| PolyError(format!("Could not load edges for polyhedron {longname}")))?
+            .collect::<Result<Vec<_>, _>>()
+            .or_raise(|| PolyError(format!("Could not decode edges for {longname}")))?;
 
         // check winding order
         // This is mainly needed for putting the rakes in the right place
@@ -212,7 +279,9 @@ impl Polyhedron {
             }
         }
 
-        poly.find_path(0);
+        if let Some(p) = poly.find_path(0) {
+            poly.edge_path = p;
+        }
         Ok(poly)
     }
 
@@ -350,8 +419,7 @@ impl Polyhedron {
 
     /// get n of an edge
     fn edge_n_on_face(&self, face_idx: usize, edge: Edge) -> Option<usize> {
-        let face = &self.faces[face_idx];
-        face.iter().position(|i| *i == edge.end)
+        self.face_edges(face_idx, 0).position(|e| e == edge)
     }
 
     /// Get the face on the other side of the nth edge
@@ -376,6 +444,7 @@ impl Polyhedron {
     ///
     /// If a path is found, will update self
     fn dfs(&mut self, path: &mut Path, visited: &mut Vec<bool>, visit: PolygonVisit) -> bool {
+        println!("dfssing from {visit:?}");
         // So I mean, this works, but it's illegible. So what would be nice is
         // to have some face/edge-related functions on polyhedron....
         //
@@ -398,8 +467,9 @@ impl Polyhedron {
         if !visited[visit.face_idx] {
             // rotate poly so we're entering on edge 0-1
             visited[visit.face_idx] = true;
-            // winding direction is the same, so we only need to find the first
-            let rotate_amount = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
+            let Some(rotate_amount) = self.edge_n_on_face(visit.face_idx, visit.enter) else {
+                return false;
+            };
             self.faces[visit.face_idx].rotate_left(rotate_amount);
         }
 
@@ -424,7 +494,7 @@ impl Polyhedron {
             )
             .collect::<Vec<_>>();
         let mut revisits = Vec::new();
-        for (i, edge) in face_edges.iter().enumerate() {
+        for (i, edge) in face_edges.iter().enumerate().skip(1) {
             if path.iter().any(|crossing| crossing.enter == edge.rev()) {
                 continue;
             }
@@ -433,7 +503,7 @@ impl Polyhedron {
             // here we check for all polyhedron faces if it contains this edge, which is kinda inefficient
             let n_face_idx = self.other_face(visit.face_idx, i);
 
-            // If this face has already been visited, check the crossing rule
+            // If this face has already been visited, check the crossing rule: 0-2 1-3 is not allowed
             //
             // wait... on hexagon, 01  45  23 is allowed actually and below would disregard that
             // even though in the order thingy, that would make more sense
@@ -463,9 +533,6 @@ impl Polyhedron {
                 // so the 02 13 case, which says 1 is illegal on an existing 02
                 // For that, we only need to check if any _later_ edges are in the path
                 // Since we rotate on first visit, this is correct
-                //
-                // The only BIG problem is that we're checking entering edge and don't know exiting edge
-                // except... that's ofcofc the next-in-line on the path
                 let prev_crossing = path[prev_visit_idx];
 
                 if path.iter().any(|crossing| crossing.enter == *edge) {
@@ -484,11 +551,7 @@ impl Polyhedron {
                         //
                         // edges in path are stored clockwise relative to their face, so when searching,
                         // need to search for the counter-clockwise equivalent. from this face
-                        let edge = (
-                            n_face[(test_edge_start + 1) % n_face.len()],
-                            n_face[test_edge_start],
-                        )
-                            .into();
+                        let edge = self.edge_from_face(n_face_idx, test_edge_start).rev();
                         path.iter().any(|v| v.exit == edge)
                     })
                 {
@@ -513,11 +576,13 @@ impl Polyhedron {
                     return true;
                 }
                 // we want to closely hug visited pcbs, so break before diverging
+                // this greatly speeds up search time, but kinda sad
                 break;
             }
         }
         for revisit in revisits {
             path.push(revisit.0);
+            // So here it'd be better to do some alternative "I'm revisiting a face!"-type dfs
             if self.dfs(path, visited, revisit.1) {
                 return true;
             }
@@ -554,7 +619,7 @@ impl PolygonVisit {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PolygonCrossing {
     face_idx: usize,
     enter: Edge,
@@ -578,7 +643,7 @@ mod test {
         //   p 0 t
         //   q   s
         // 2   u   3
-        Polyhedron {
+        let mut tet = Polyhedron {
             name: "tet".to_string(),
             vertices: vec![
                 vec3(1.0, 1.0, 1.0),
@@ -586,12 +651,82 @@ mod test {
                 vec3(1.0, -1.0, -1.0),
                 vec3(-1.0, 1.0, -1.0),
             ],
+            //             0                 1               2              3
             faces: vec![vec![1, 0, 2], vec![1, 2, 3], vec![1, 3, 0], vec![0, 3, 2]],
-            face_transforms: Vec::new(),
+            // follow pqrstu
+            edges: vec![
+                PolyEdge {
+                    // p 0
+                    edge: (1, 2).into(),
+                    faces: [0, 1],
+                    dihedral: 70.5287793655093,
+                },
+                PolyEdge {
+                    // q 1
+                    edge: (0, 2).into(),
+                    faces: [0, 3],
+                    dihedral: 70.5287793655093,
+                },
+                PolyEdge {
+                    // r 2
+                    edge: (0, 1).into(),
+                    faces: [0, 2],
+                    dihedral: 70.5287793655093,
+                },
+                PolyEdge {
+                    // s 3
+                    edge: (0, 3).into(),
+                    faces: [2, 3],
+                    dihedral: 70.5287793655093,
+                },
+                PolyEdge {
+                    // t 4
+                    edge: (1, 3).into(),
+                    faces: [1, 2],
+                    dihedral: 70.5287793655093,
+                },
+                PolyEdge {
+                    // u 5
+                    edge: (2, 3).into(),
+                    faces: [1, 3],
+                    dihedral: 70.5287793655093,
+                },
+            ],
+            face_graph: vec![
+                BTreeMap::from([(1, 0), (2, 2), (3, 1)]),
+                BTreeMap::from([(0, 0), (2, 4), (3, 5)]),
+                BTreeMap::from([(0, 2), (1, 4), (3, 3)]),
+                BTreeMap::from([(0, 1), (1, 5), (2, 3)]),
+            ],
+            face_transforms: vec![Mat4::zero(); 4],
             edge_path: Vec::new(),
         };
-
-        assert_eq!(2 + 2, 5);
+        let p = tet.find_path(0).unwrap();
+        assert_eq!(
+            p,
+            vec![
+                PolygonCrossing {
+                    face_idx: 0,
+                    enter: (1, 0).into(),
+                    exit: (0, 2).into(),
+                },
+                PolygonCrossing {
+                    face_idx: 3,
+                    enter: (2, 0).into(),
+                    exit: (0, 3).into()
+                },
+                PolygonCrossing {
+                    face_idx: 2,
+                    enter: (3, 0).into(),
+                    exit: (1, 3).into()
+                },
+                PolygonCrossing {
+                    face_idx: 1,
+                    enter: (3, 1).into(),
+                    exit: (1, 2).into()
+                }
+            ]
+        );
     }
 
     fn test_make_path_thawro() {

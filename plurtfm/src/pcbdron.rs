@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 use std::{error::Error, iter::FlatMap};
 
-use colorous::{BLUES, CUBEHELIX, PLASMA};
 use derive_more::Display;
 use exn::ResultExt;
 use log::info;

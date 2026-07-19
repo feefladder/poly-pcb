@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{pcbdron::MultiPcbdron, polyhedron::Polyhedron};
 use log::info;
@@ -142,10 +142,12 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
 ///
 /// for truncated tetrahedron, this will only set triangles:
 /// ```
-/// VariantMap::PerNGon(BTreeMap::from([(3, vec![0,1,1,2])]))
+/// use std::collections::BTreeMap;
+/// use poly_pcb::VariantMap;
+/// VariantMap(BTreeMap::from([(3, vec![0,1,1,2])]));
 /// ```
 #[derive(Serialize, Deserialize, Default, Debug)]
-pub struct VariantMap(Vec<(usize, Vec<usize>)>);
+pub struct VariantMap(pub BTreeMap<usize, Vec<usize>>);
 
 #[wasm_bindgen]
 #[cfg(target_arch = "wasm32")]
