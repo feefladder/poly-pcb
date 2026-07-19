@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { Interface } from "./pkg/plurtfm.js";
+import { Interface } from "./pkg/poly_pcb.js";
 
 const assets = {
   ...import.meta.glob("./assets/*.glb", {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, type Ref } from "vue";
-import { Interface, PcbId, VarId } from "./pkg/plurtfm.js";
+import { Interface, PcbId, VarId } from "./pkg/poly_pcb.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
 if (import.meta.hot) {
@@ -81,7 +81,7 @@ function apply_url() {
 }
 
 onMounted(async () => {
-    const wasm = await import("./pkg/plurtfm.js");
+    const wasm = await import("./pkg/poly_pcb.js");
 
     await wasm.default();
     let db = await loadAsset("polydb.sqlite3");
