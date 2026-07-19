@@ -1,11 +1,8 @@
 use derive_more::Display;
-use exn::{OptionExt, ResultExt};
+use exn::ResultExt;
 use log::{info, warn};
 use rusqlite::Connection;
-use std::{
-    collections::{BTreeSet, HashMap, HashSet, VecDeque},
-    error::Error,
-};
+use std::error::Error;
 use three_d::*;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +14,14 @@ pub struct Polyhedron {
     ///
     /// This is u32 because [`three_d::Indices`] is strongly typed and usize is u32 on wasm.
     pub faces: Vec<Vec<u32>>,
+    // /// Polyhedron edges, bidirectional map per face
+    // ///
+    // /// hmm, somehow it'd also be nice to know the edge's vertices...
+    // /// which isn't the faces
+    // /// ```
+    // ///
+    // /// ```
+    // pub edges: Vec<BTreeMap<usize, f32>>,
     /// per-face transforms
     /// ```
     /// // put glb on face `i`:
@@ -70,6 +75,15 @@ impl Edge {
         Edge {
             start: self.end,
             end: self.start,
+        }
+    }
+}
+
+impl From<(u32, u32)> for Edge {
+    fn from(value: (u32, u32)) -> Self {
+        Self {
+            start: value.0,
+            end: value.1,
         }
     }
 }
@@ -266,6 +280,7 @@ impl Polyhedron {
         }
     }
 
+    /// Create a sphere with average radius of the polyhedron
     pub fn sphere(
         &self,
         context: &Context,
@@ -290,6 +305,7 @@ impl Polyhedron {
         Ok(new_model)
     }
 
+    /// Find a path starting at the given face
     pub fn find_path(&mut self, start_face_idx: usize) -> Option<Path> {
         let mut path = Vec::with_capacity(self.faces.len() + 5);
         let mut visited = vec![false; self.faces.len()];
@@ -300,7 +316,7 @@ impl Polyhedron {
             &mut visited,
             PolygonVisit {
                 face_idx: start_face_idx,
-                enter: (start_face[0], start_face[1]),
+                enter: (start_face[0], start_face[1]).into(),
             },
         ) {
             info!("found path {path:?}");
@@ -332,19 +348,27 @@ impl Polyhedron {
         }
     }
 
-    fn edge_n_on_face(&self, face_idx: usize, edge: (u32, u32)) -> usize {
-        face.iter().position(|i| *i == visit.enter.1).unwrap()
+    /// get n of an edge
+    fn edge_n_on_face(&self, face_idx: usize, edge: Edge) -> Option<usize> {
+        let face = &self.faces[face_idx];
+        face.iter().position(|i| *i == edge.end)
     }
 
+    /// Get the face on the other side of the nth edge
     fn other_face(&self, my_face: usize, flip_edge: usize) -> usize {
-        42
+        let edge = self.edge_from_face(my_face, flip_edge).rev();
+        self.faces
+            .iter()
+            .enumerate()
+            .position(|(i, _n_face)| i != my_face && self.edge_n_on_face(i, edge).is_some())
+            .unwrap()
     }
 
-    fn face_edges(&self, face_idx: usize, start_idx: usize) -> impl Iterator<Item = (u32, u32)> {
+    fn face_edges(&self, face_idx: usize, start_idx: usize) -> impl Iterator<Item = Edge> {
         let face = &self.faces[face_idx];
         face.iter()
             .zip(face.iter().cycle().skip(1))
-            .map(|(start, end)| (*start, *end))
+            .map(|(start, end)| (*start, *end).into())
             .skip(start_idx)
     }
 
@@ -375,17 +399,15 @@ impl Polyhedron {
             // rotate poly so we're entering on edge 0-1
             visited[visit.face_idx] = true;
             // winding direction is the same, so we only need to find the first
-            let rotate_amount = self.faces[visit.face_idx]
-                .iter()
-                .position(|vidx| *vidx == visit.enter.0)
-                .unwrap();
+            let rotate_amount = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
             self.faces[visit.face_idx].rotate_left(rotate_amount);
         }
 
-        // success condition
+        // success condition: all faces visited
         if visited.iter().all(|v| *v) {
-            let f = &self.faces[visit.face_idx];
-            path.push(visit.exit((f[1], f[2])));
+            // add current visit
+            // exit is first possible exit
+            path.push(visit.exit(self.edge_from_face(visit.face_idx, 1)));
             return true;
         }
 
@@ -397,35 +419,43 @@ impl Polyhedron {
         let face_edges = self
             .face_edges(
                 visit.face_idx,
-                face.iter().position(|i| *i == visit.enter.1).unwrap(),
+                self.edge_n_on_face(visit.face_idx, visit.enter.into())
+                    .unwrap(),
             )
             .collect::<Vec<_>>();
         let mut revisits = Vec::new();
-        for edge in face_edges {
-            let rev = (edge.1, edge.0);
-            if path.iter().any(|crossing| crossing.enter == rev) {
+        for (i, edge) in face_edges.iter().enumerate() {
+            if path.iter().any(|crossing| crossing.enter == edge.rev()) {
                 continue;
             }
             // check if we're visiting an already-crossed polygon
             //
             // here we check for all polyhedron faces if it contains this edge, which is kinda inefficient
-            let n_face_idx = self
-                .faces
-                .iter()
-                .enumerate()
-                .position(|(i, n_face)| {
-                    i != visit.face_idx
-                        && n_face
-                            .iter()
-                            .zip(n_face.iter().cycle().skip(1))
-                            .position(|(start, end)| (*start, *end) == rev)
-                            .is_some()
-                })
-                .unwrap();
+            let n_face_idx = self.other_face(visit.face_idx, i);
+
+            // If this face has already been visited, check the crossing rule
+            //
+            // wait... on hexagon, 01  45  23 is allowed actually and below would disregard that
+            // even though in the order thingy, that would make more sense
+            // ```
+            //    3
+            // 2 /-\ 4
+            // 1 \_/ 5
+            //    0
+            // ```
+            // because it like goes around the polygon and then will come back at 5
+            // and the best heuristic there is actually to try to exit asap as well, in stead of searching from 2
+            // but whatevs
+            //
+            // maybe it'd also be very fast to check if it's visited and a triangle
             if let Some(prev_visit_idx) = path
                 .iter()
                 .rposition(|a_visit| a_visit.face_idx == n_face_idx)
             {
+                // triangle shortcut (they can't be visited twice)
+                if self.faces[path[prev_visit_idx].face_idx].len() == 3 {
+                    continue;
+                }
                 // get neighbour face id
                 // Not sure why we need that though?
                 // maybe to check if we are in between two edges
@@ -438,14 +468,14 @@ impl Polyhedron {
                 // except... that's ofcofc the next-in-line on the path
                 let prev_crossing = path[prev_visit_idx];
 
-                if path.iter().any(|crossing| crossing.enter == edge) {
+                if path.iter().any(|crossing| crossing.enter == *edge) {
                     continue;
                 }
 
                 let n_face = &self.faces[n_face_idx];
                 let n = n_face
                     .iter()
-                    .position(|vidx| prev_crossing.exit.0 == *vidx)
+                    .position(|vidx| prev_crossing.exit.start == *vidx)
                     .unwrap();
                 // crossing rule:
                 if n < face.len() - 1
@@ -457,26 +487,27 @@ impl Polyhedron {
                         let edge = (
                             n_face[(test_edge_start + 1) % n_face.len()],
                             n_face[test_edge_start],
-                        );
+                        )
+                            .into();
                         path.iter().any(|v| v.exit == edge)
                     })
                 {
                     revisits.push((
-                        visit.exit(edge),
+                        visit.exit(*edge),
                         PolygonVisit {
                             face_idx: n_face_idx,
-                            enter: rev,
+                            enter: edge.rev(),
                         },
                     ));
                 }
             } else {
-                path.push(visit.exit(edge));
+                path.push(visit.exit(*edge));
                 if self.dfs(
                     path,
                     visited,
                     PolygonVisit {
                         face_idx: n_face_idx,
-                        enter: rev,
+                        enter: edge.rev(),
                     },
                 ) {
                     return true;
@@ -494,7 +525,7 @@ impl Polyhedron {
 
         path.pop();
         // if we've rotated the face, we were the ones visiting
-        if self.faces[visit.face_idx][0] == visit.enter.0 {
+        if self.faces[visit.face_idx][0] == visit.enter.start {
             visited[visit.face_idx] = false;
         }
 
@@ -510,11 +541,11 @@ pub type Path = Vec<PolygonCrossing>;
 #[derive(Debug, Clone, Copy)]
 pub struct PolygonVisit {
     face_idx: usize,
-    enter: (u32, u32),
+    enter: Edge,
 }
 
 impl PolygonVisit {
-    fn exit(self, exit: (u32, u32)) -> PolygonCrossing {
+    fn exit(self, exit: Edge) -> PolygonCrossing {
         PolygonCrossing {
             face_idx: self.face_idx,
             enter: self.enter,
@@ -526,8 +557,8 @@ impl PolygonVisit {
 #[derive(Debug, Clone, Copy)]
 pub struct PolygonCrossing {
     face_idx: usize,
-    enter: (u32, u32),
-    exit: (u32, u32),
+    enter: Edge,
+    exit: Edge,
 }
 
 #[cfg(test)]
