@@ -61,8 +61,17 @@ pub struct Polyhedron {
 /// An edge of a polyhedron
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Edge {
-    pub start: usize,
-    pub end: usize,
+    pub start: u32,
+    pub end: u32,
+}
+
+impl Edge {
+    fn rev(&self) -> Edge {
+        Edge {
+            start: self.end,
+            end: self.start,
+        }
+    }
 }
 
 #[derive(Debug, Display, Clone)]
@@ -189,7 +198,7 @@ impl Polyhedron {
             }
         }
 
-        // poly.find_path(0);
+        poly.find_path(0);
         Ok(poly)
     }
 
@@ -308,10 +317,60 @@ impl Polyhedron {
         }
     }
 
+    /// Get the nth edge of this face in clockwise direction
+    /// let's say these are face indices:
+    /// ```text
+    /// 2
+    ///  \
+    ///   1--0
+    /// ```
+    /// then edge_from_face(0) will give (face[0], face[1])
+    fn edge_from_face(&self, face_idx: usize, edge_n: usize) -> Edge {
+        Edge {
+            start: self.faces[face_idx][edge_n],
+            end: self.faces[face_idx][(edge_n + 1) % self.faces[face_idx].len()],
+        }
+    }
+
+    fn edge_n_on_face(&self, face_idx: usize, edge: (u32, u32)) -> usize {
+        face.iter().position(|i| *i == visit.enter.1).unwrap()
+    }
+
+    fn other_face(&self, my_face: usize, flip_edge: usize) -> usize {
+        42
+    }
+
+    fn face_edges(&self, face_idx: usize, start_idx: usize) -> impl Iterator<Item = (u32, u32)> {
+        let face = &self.faces[face_idx];
+        face.iter()
+            .zip(face.iter().cycle().skip(1))
+            .map(|(start, end)| (*start, *end))
+            .skip(start_idx)
+    }
+
     /// Make a path, starting at the given face.
     ///
     /// If a path is found, will update self
     fn dfs(&mut self, path: &mut Path, visited: &mut Vec<bool>, visit: PolygonVisit) -> bool {
+        // So I mean, this works, but it's illegible. So what would be nice is
+        // to have some face/edge-related functions on polyhedron....
+        //
+        // and store something edge-like, since idk.. they don't have _that_
+        // much data and we need dihedral angle-thingies anyways in order to
+        // tell people to not solder a led on sharp angles.
+        //
+        // Like yes, everything can be calculated, but trading memory for computation can do..
+        //
+        // So what is often done?
+        // searching the path is kind of a necessary evil, since we want to have it ordered
+        //
+        // but the sad thing is this discrepancy between (face,id)<->(e0,e1) and
+        // altogether I think the ordered-ness is very stokes and that's nice,
+        // but it's kind of an unneeded extra requirement in an already rather
+        // hard algorithm to also have to consider reversing edges?
+        //
+        // anyways, let's add a poly.edge(face_idx, id) or something?
+        // it almost feels like having some silly type that is Face(Vec<u32>) just to be able to nicen the zip(skip) iterator hell?
         if !visited[visit.face_idx] {
             // rotate poly so we're entering on edge 0-1
             visited[visit.face_idx] = true;
@@ -335,11 +394,12 @@ impl Polyhedron {
         // for dfs we want to go left first, then cycle around the polygon.
         //
         // Also if we're revisiting the polygon, then only check next n edges
-        let face_edges = face
-            .iter()
-            .zip(face.iter().cycle().skip(1))
-            .map(|(start, end)| (*start, *end))
-            .skip(face.iter().position(|i| *i == visit.enter.1).unwrap());
+        let face_edges = self
+            .face_edges(
+                visit.face_idx,
+                face.iter().position(|i| *i == visit.enter.1).unwrap(),
+            )
+            .collect::<Vec<_>>();
         let mut revisits = Vec::new();
         for edge in face_edges {
             let rev = (edge.1, edge.0);
