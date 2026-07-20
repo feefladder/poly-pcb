@@ -384,6 +384,7 @@ impl Polyhedron {
 
         if self.dfs(
             &mut path,
+            &mut (0..self.faces.len()).map(|i| Vec::new()).collect(),
             &mut visited,
             PolygonVisit {
                 face_idx: start_face_idx,
@@ -455,7 +456,13 @@ impl Polyhedron {
     /// Make a path, starting at the given face.
     ///
     /// If a path is found, will update self
-    fn dfs(&mut self, path: &mut Path, visited: &mut Vec<bool>, visit: PolygonVisit) -> bool {
+    fn dfs(
+        &mut self,
+        path: &mut Path,
+        face_path_index: &mut Vec<Vec<usize>>,
+        visited: &mut Vec<bool>,
+        visit: PolygonVisit,
+    ) -> bool {
         // So I mean, this works, but it's illegible. So what would be nice is
         // to have some face/edge-related functions on polyhedron....
         //
@@ -493,7 +500,7 @@ impl Polyhedron {
         }
 
         // current face
-        let face = self.faces[visit.face_idx].to_owned();
+        // let face = &self.faces[visit.face_idx];
         // for dfs we want to go left first, then cycle around the polygon.
         //
         // Also if we're revisiting the polygon, then only check next n edges
@@ -502,16 +509,21 @@ impl Polyhedron {
             .unwrap();
         let face_edges = self.face_edges(visit.face_idx, n).collect::<Vec<_>>();
         let mut revisits = Vec::new();
+        let mut n_new_faces = 0;
         for (i, edge) in face_edges.iter().enumerate().skip(1) {
-            if path.iter().any(|crossing| crossing.enter == edge.rev()) {
-                continue;
-            }
+            let enter_idx = i + n;
             // check if we're visiting an already-crossed polygon
             //
             // here we check for all polyhedron faces if it contains this edge, which is kinda inefficient
-            debug_assert_eq!(&self.edge_from_face(visit.face_idx, i + n), edge);
-            let n_face_idx = self.other_face(visit.face_idx, i + n);
+            debug_assert_eq!(&self.edge_from_face(visit.face_idx, enter_idx), edge);
+            let n_face_idx = self.other_face(visit.face_idx, enter_idx);
 
+            if face_path_index[n_face_idx]
+                .iter()
+                .any(|&crossing_idx| path[crossing_idx].enter == edge.rev())
+            {
+                continue;
+            }
             // If this face has already been visited, check the crossing rule: 0-2 1-3 is not allowed
             //
             // wait... on hexagon, 01  45  23 is allowed actually and below would disregard that
@@ -527,10 +539,7 @@ impl Polyhedron {
             // but whatevs
             //
             // maybe it'd also be very fast to check if it's visited and a triangle
-            if let Some(prev_visit_idx) = path
-                .iter()
-                .rposition(|a_visit| a_visit.face_idx == n_face_idx)
-            {
+            if let Some(prev_visit_idx) = face_path_index[n_face_idx].last() {
                 // triangle shortcut (they can't be visited twice)
                 if self.faces[n_face_idx].len() == 3 {
                     continue;
@@ -542,15 +551,7 @@ impl Polyhedron {
                 // so the 02 13 case, which says 1 is illegal on an existing 02
                 // For that, we only need to check if any _later_ edges are in the path
                 // Since we rotate on first visit, this is correct
-                let prev_crossing = path[prev_visit_idx];
-
-                if path
-                    .iter()
-                    .filter(|v| v.face_idx == n_face_idx)
-                    .any(|crossing| crossing.enter == *edge)
-                {
-                    continue;
-                }
+                let prev_crossing = path[*prev_visit_idx];
 
                 let n_face = &self.faces[n_face_idx];
 
@@ -558,18 +559,11 @@ impl Polyhedron {
                     .edge_n_on_face(n_face_idx, prev_crossing.enter)
                     .unwrap();
                 // crossing rule:
-                if n < face.len() - 1
-                    && !(n..n_face.len()).any(|test_edge_start| {
-                        // check if path already contains that edge somewhere
-                        //
-                        // edges in path are stored clockwise relative to their face, so when searching,
-                        // need to search for the counter-clockwise equivalent. from this face
-                        let edge = self.edge_from_face(n_face_idx, test_edge_start).rev();
-                        path.iter()
-                            .filter(|v| v.face_idx == n_face_idx)
-                            .any(|v| v.exit == edge)
-                    })
-                {
+                if !face_path_index[n_face_idx].iter().any(|&i| {
+                    let cr = path[i];
+                    self.edge_n_on_face(n_face_idx, cr.enter).unwrap() < enter_idx
+                        && self.edge_n_on_face(n_face_idx, cr.exit).unwrap() > enter_idx
+                }) {
                     revisits.push((
                         visit.exit(*edge),
                         PolygonVisit {
@@ -579,9 +573,11 @@ impl Polyhedron {
                     ));
                 }
             } else {
+                face_path_index[visit.face_idx].push(path.len());
                 path.push(visit.exit(*edge));
                 if self.dfs(
                     path,
+                    face_path_index,
                     visited,
                     PolygonVisit {
                         face_idx: n_face_idx,
@@ -592,18 +588,26 @@ impl Polyhedron {
                 }
                 // we want to closely hug visited pcbs, so break before diverging
                 // this greatly speeds up search time, but kinda sad
+                n_new_faces += 1;
+                if n_new_faces == 2 {
+                    break;
+                }
                 // break;
             }
         }
         for revisit in revisits {
+            face_path_index[revisit.0.face_idx].push(path.len());
             path.push(revisit.0);
             // So here it'd be better to do some alternative "I'm revisiting a face!"-type dfs
-            if self.dfs(path, visited, revisit.1) {
+            if self.dfs(path, face_path_index, visited, revisit.1) {
                 return true;
             }
         }
 
-        path.pop();
+        if let Some(v) = path.pop() {
+            face_path_index[v.face_idx].pop();
+        }
+
         // if we've rotated the face, we were the ones visiting
         if self.faces[visit.face_idx][0] == visit.enter.start {
             visited[visit.face_idx] = false;
@@ -809,6 +813,18 @@ mod test {
                 89, 85, 65, 79, 76, 77, 63, 62, 69, 68, 36, 54, 66, 72, 82, 83, 88, 86, 78, 64, 56,
                 57, 74, 75, 61, 60, 71, 70, 37, 55
             ]
+        );
+    }
+
+    #[test]
+    // #[ignore = "takes long"]
+    fn test_triaugmented_truncated_dodecahedron() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let conn = rusqlite::Connection::open("web/src/assets/polydb.sqlite3").expect("open db");
+        let tc = Polyhedron::load(&conn, "triaugmented truncated dodecahedron").unwrap();
+        assert_eq!(
+            tc.edge_path.iter().map(|c| c.face_idx).collect::<Vec<_>>(),
+            vec![0, 1]
         );
     }
 
