@@ -2,6 +2,7 @@
 //!
 //! anything responding to events, because it was growing too big
 
+use exn::ResultExt;
 use log::info;
 use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
@@ -12,7 +13,6 @@ use crate::{Interface, PcbId, VarId};
 #[wasm_bindgen]
 impl Interface {
     pub fn on_key(&mut self, key_event: KeyboardEvent) -> Result<(), JsError> {
-        info!("on_key called");
         match key_event.key().as_str() {
             "ArrowLeft" => {
                 self.scene
@@ -94,7 +94,10 @@ impl Interface {
 
     pub fn on_pointer_up(&mut self, event: PointerEvent) -> Result<(), JsValue> {
         info!("pointer moved {event:?}");
-        self.canvas.release_pointer_capture(event.pointer_id())
+        if event.pointer_type() != "touch" {
+            self.canvas.release_pointer_capture(event.pointer_id())?
+        }
+        Ok(())
     }
 
     pub fn on_wheel(&mut self, event: WheelEvent) -> Result<(), JsValue> {
@@ -147,7 +150,10 @@ impl Interface {
                 }
                 pcbdron.variant_map[face_id] = 4;
                 pcbdron.polyhedron.find_path(face_id);
-                self.scene.pcbdrons.update_instances();
+                self.scene
+                    .pcbdrons
+                    .update_instances()
+                    .map_err(|e| JsError::new(&e.to_string()))?;
                 self.render();
             } else {
                 let pcbdron = self.scene.pcbdrons.pcbdrons().nth(0).unwrap();

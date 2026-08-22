@@ -10,17 +10,16 @@ and some nice SVG rendering I guess?
 
 # build and serve
 
-from this directory:
-
-```
-wasm-pack build --target web --out-dir web/src/pkg --debug &&  python3 -m http.server
-```
-
-Ya, I know, then all html and stuff is in the project directory, ugly but oks.
+Open two terminals, in one, watch cargo:
 
 ```
 cargo watch -s "wasm-pack build . --target web --dev --out-dir web/src/pkg"
 ```
+Or, if you're on battery an don't want to compile for every save-to-format:
+```
+wasm-pack build . --target web --dev --out-dir web/src/pkg
+```
+
 and in separate terminal in `web/`:
 ```
 npm run dev

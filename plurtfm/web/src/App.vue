@@ -3,6 +3,7 @@ import { ref, onMounted, watch, type Ref } from "vue";
 import { Interface, PcbId, VarId } from "./pkg/poly_pcb.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
+// hot reload triggers full page reload to fix double-init wasm
 if (import.meta.hot) {
     import.meta.hot.accept(() => {
         location.reload();
@@ -11,12 +12,25 @@ if (import.meta.hot) {
 
 // make match rust
 type VariantMap = [number, number[]][];
+type Path = number[];
+
+interface UiState {
+    mode: "select" | "path";
+
+    polyhedron: string;
+    variantMap: VariantMap;
+    path: Path;
+}
 
 const polyhedra: Ref<string[]> = ref([]);
 const pcbLoader = ref<PcbLoader | null>(null);
 const canvas = ref();
-const selected = ref("tetrahedron");
-const variant_map: Ref<VariantMap> = ref([[3, [4, 4, 2, 0, 3]]]);
+const uiState = ref<UiState>({
+    mode: "select",
+    polyhedron: "tetrahedron",
+    variantMap: [[3, [4, 0, 1, 2]]],
+    path: [0, 1, 2, 3],
+});
 
 let iface: Interface;
 
@@ -47,36 +61,34 @@ function update_url(name: string, map: VariantMap) {
 function apply_url() {
     const hash = decodeURIComponent(location.hash.slice(2)); // remove "#/"
 
-    const [poly_url, query = ""] = hash.split("?", 2);
-    const polyhedron = poly_url?.toLowerCase().replace(/[-_ ]+/g, " ");
+    const [polyUrl, query = ""] = hash.split("?", 2);
+    const polyhedron = polyUrl?.toLowerCase().replace(/[-_ ]+/g, " ");
     const entries: [number, number[]][] = [];
 
     for (const [nGon, encoded] of new URLSearchParams(query)) {
         entries.push([Number(nGon), [...encoded].map((c) => parseInt(c, 16))]);
     }
 
-    if (entries.length > 0) {
-        variant_map.value = entries;
+    if (entries.length > 0 && entries !== uiState.value.variantMap) {
+        uiState.value.variantMap = entries;
     }
 
     if (
         polyhedron &&
         polyhedra.value.includes(polyhedron) &&
-        selected.value != polyhedron
+        uiState.value.polyhedron != polyhedron
     ) {
         console.log(
             "setting polyhedron to ",
             polyhedron,
             " because ",
-            selected.value,
+            uiState.value.polyhedron,
             " is different ",
-            polyhedron == selected.value,
-            polyhedron === selected.value,
         );
-        selected.value = polyhedron;
+        uiState.value.polyhedron = polyhedron;
     } else {
         console.log("could not find ", polyhedron);
-        selected.value = "tetrahedron";
+        // do nothing
     }
 }
 
@@ -99,18 +111,23 @@ onMounted(async () => {
 });
 
 watch(
-    [selected, variant_map],
-    async ([new_name, new_map]) => {
+    uiState,
+    async (state) => {
         if (iface) {
-            console.log("setting poly with variant map ", variant_map.value);
+            console.log(
+                "setting poly ",
+                state.polyhedron,
+                "with variant map",
+                state.variantMap,
+            );
             let missing_variants: Array<Array<number>> = iface.set_polyhedron(
-                new_name,
-                new_map,
+                state.polyhedron,
+                state.variantMap,
             );
             console.log("missing variants", missing_variants);
             pcbLoader.value!.requestMany(missing_variants);
         }
-        update_url(new_name, new_map);
+        update_url(state.polyhedron, state.variantMap);
     },
     { deep: true },
 );
@@ -128,11 +145,11 @@ function on_request_pcb(var_id: VarId) {
         variant = 0;
     }
 
-    let entry = variant_map.value.find(([n]) => n === n_gon);
+    let entry = uiState.value.variantMap.find(([n]) => n === n_gon);
 
     if (!entry) {
         entry = [n_gon, []];
-        variant_map.value.push(entry);
+        uiState.value.variantMap.push(entry);
     }
 
     const variants = entry[1];
@@ -148,7 +165,7 @@ function on_request_pcb(var_id: VarId) {
 <template>
     <div class="layout">
         <aside class="sidebar">
-            <select v-model="selected">
+            <select v-model="uiState.polyhedron">
                 <option v-for="name in polyhedra" :key="name">
                     {{ name }}
                 </option>
@@ -163,7 +180,7 @@ function on_request_pcb(var_id: VarId) {
                 ref="canvas"
                 tabindex="0"
                 @keydown="iface.on_key"
-                @next_polyhedron="selected = $event.detail"
+                @next_polyhedron="uiState.polyhedron = $event.detail"
                 @request_pcb="
                     (e: CustomEventInit<VarId>) => {
                         on_request_pcb(e.detail!);

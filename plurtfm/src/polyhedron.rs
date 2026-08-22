@@ -1,6 +1,6 @@
 use derive_more::Display;
 use exn::{OptionExt, ResultExt};
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use rusqlite::Connection;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -485,9 +485,7 @@ impl Polyhedron {
         if !visited[visit.face_idx] {
             // rotate poly so we're entering on edge 0-1
             visited[visit.face_idx] = true;
-            let Some(rotate_amount) = self.edge_n_on_face(visit.face_idx, visit.enter) else {
-                return false;
-            };
+            let rotate_amount = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
             self.faces[visit.face_idx].rotate_left(rotate_amount);
         }
 
@@ -507,9 +505,11 @@ impl Polyhedron {
         let n = self
             .edge_n_on_face(visit.face_idx, visit.enter.into())
             .unwrap();
+        // assert_eq!(n, 0);
         let face_edges = self.face_edges(visit.face_idx, n).collect::<Vec<_>>();
         let mut revisits = Vec::new();
         let mut n_new_faces = 0;
+        // skip entering edge
         for (i, edge) in face_edges.iter().enumerate().skip(1) {
             let enter_idx = i + n;
             // check if we're visiting an already-crossed polygon
@@ -539,7 +539,7 @@ impl Polyhedron {
             // but whatevs
             //
             // maybe it'd also be very fast to check if it's visited and a triangle
-            if let Some(prev_visit_idx) = face_path_index[n_face_idx].last() {
+            if face_path_index[n_face_idx].len() != 0 {
                 // triangle shortcut (they can't be visited twice)
                 if self.faces[n_face_idx].len() == 3 {
                     continue;
@@ -551,18 +551,16 @@ impl Polyhedron {
                 // so the 02 13 case, which says 1 is illegal on an existing 02
                 // For that, we only need to check if any _later_ edges are in the path
                 // Since we rotate on first visit, this is correct
-                let prev_crossing = path[*prev_visit_idx];
 
-                let n_face = &self.faces[n_face_idx];
-
-                let n = self
-                    .edge_n_on_face(n_face_idx, prev_crossing.enter)
-                    .unwrap();
                 // crossing rule:
+                // 02 disallows 13
+                // e.g. 0 enter and 2 exit disallows 1 as enter
+                //
+                // but also,
                 if !face_path_index[n_face_idx].iter().any(|&i| {
                     let cr = path[i];
-                    self.edge_n_on_face(n_face_idx, cr.enter).unwrap() < enter_idx
-                        && self.edge_n_on_face(n_face_idx, cr.exit).unwrap() > enter_idx
+                    self.edge_n_on_face(n_face_idx, cr.enter).unwrap() <= enter_idx
+                        && self.edge_n_on_face(n_face_idx, cr.exit).unwrap() >= enter_idx
                 }) {
                     revisits.push((
                         visit.exit(*edge),
@@ -598,6 +596,14 @@ impl Polyhedron {
         for revisit in revisits {
             face_path_index[revisit.0.face_idx].push(path.len());
             path.push(revisit.0);
+            // debug!(
+            //     "revisiting face {:?} which has been visited by {:?}",
+            //     revisit.1,
+            //     face_path_index[revisit.1.face_idx]
+            //         .iter()
+            //         .map(|&i| path[i])
+            //         .collect::<Vec<_>>()
+            // );
             // So here it'd be better to do some alternative "I'm revisiting a face!"-type dfs
             if self.dfs(path, face_path_index, visited, revisit.1) {
                 return true;
@@ -612,7 +618,67 @@ impl Polyhedron {
         if self.faces[visit.face_idx][0] == visit.enter.start {
             visited[visit.face_idx] = false;
         }
+        false
+    }
 
+    fn revisit_dfs(
+        &mut self,
+        path: &mut Path,
+        face_path_index: &mut Vec<Vec<usize>>,
+        visited: &mut Vec<bool>,
+        visit: PolygonVisit,
+    ) -> bool {
+        // so we want to go like
+        // wait... on hexagon, 01  45  23 is allowed actually and below would disregard that
+        // even though in the order thingy, that would make more sense
+        // ```
+        //    3
+        // 2 /-\ 4
+        // 1 \_/ 5
+        //    0
+        // ```
+        let n = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
+        let Some(largest_smaller_n) = face_path_index[visit.face_idx]
+            .iter()
+            .filter_map(|&v| {
+                let cr = path[v];
+                if let Some(e) = self.edge_n_on_face(visit.face_idx, cr.exit) {
+                    if e < n {
+                        return Some(e);
+                    }
+                }
+                None
+            })
+            .max()
+        else {
+            error!(
+                "Could not find largest smaller n for {visit:?}, {:?}",
+                path[face_path_index[visit.face_idx][0]]
+            );
+            return false;
+        };
+        for edge_n in (largest_smaller_n..n - 1).rev() {
+            let e = self.edge_from_face(visit.face_idx, edge_n);
+            let n_face_idx = self.other_face(visit.face_idx, edge_n);
+            if face_path_index[n_face_idx].len() == 0 {
+                face_path_index[visit.face_idx].push(path.len());
+                path.push(visit.exit(e));
+                if self.dfs(
+                    path,
+                    face_path_index,
+                    visited,
+                    PolygonVisit {
+                        face_idx: n_face_idx,
+                        enter: e.rev(),
+                    },
+                ) {
+                    return true;
+                }
+            }
+        }
+        if let Some(v) = path.pop() {
+            face_path_index[v.face_idx].pop();
+        }
         false
     }
 }
@@ -640,9 +706,9 @@ impl PolygonVisit {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PolygonCrossing {
-    face_idx: usize,
-    enter: Edge,
-    exit: Edge,
+    pub face_idx: usize,
+    pub enter: Edge,
+    pub exit: Edge,
 }
 
 #[cfg(test)]
@@ -799,7 +865,7 @@ mod test {
     }
 
     #[test]
-    // #[ignore = "takes long"]
+    #[ignore = "takes long"]
     fn test_snub_dodecahedron() {
         let _ = env_logger::builder().is_test(true).try_init();
         let conn = rusqlite::Connection::open("web/src/assets/polydb.sqlite3").expect("open db");
@@ -817,7 +883,7 @@ mod test {
     }
 
     #[test]
-    // #[ignore = "takes long"]
+    #[ignore = "takes long"]
     fn test_triaugmented_truncated_dodecahedron() {
         let _ = env_logger::builder().is_test(true).try_init();
         let conn = rusqlite::Connection::open("web/src/assets/polydb.sqlite3").expect("open db");

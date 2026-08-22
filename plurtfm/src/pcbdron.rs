@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::{error::Error, iter::FlatMap};
 
@@ -9,6 +10,7 @@ use three_d::{
     PhysicalMaterial, Srgba,
 };
 
+use crate::design::PcbDesign;
 use crate::{PcbId, VariantMap, polyhedron::Polyhedron};
 
 /// A PcbGon knows where which Pcb variant is on a polyhedron
@@ -50,6 +52,38 @@ impl Pcbdron {
             .zip(&self.variant_map)
             .filter(move |((_, f), v)| f.len() == pcb_id.n_gon && **v == pcb_id.variant)
             .map(|((i, _), _)| i)
+    }
+
+    pub fn get_design(&self) -> PcbDesign {
+        let polyhedron = self.polyhedron.name.to_owned();
+        // convert from flat polygon-index to per-ngon-index
+        // I think we've done this before somewhere?
+        // well, only missing_variants comes close and that's clearly different, but can still copy over the code
+        // Except let's make this a nice btreemap?
+        let mut variant_map: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for n_gon in 3..=10 {
+            for variant in self
+                .polyhedron
+                .iter_ngon(n_gon)
+                .map(|idx| self.variant_map[idx])
+            {
+                variant_map
+                    .entry(n_gon)
+                    .and_modify(|e| e.push(variant))
+                    .or_insert(vec![variant]);
+            }
+        }
+        let path = self
+            .polyhedron
+            .edge_path
+            .iter()
+            .map(|c| c.face_idx)
+            .collect();
+        PcbDesign {
+            polyhedron,
+            variant_map,
+            path,
+        }
     }
 }
 

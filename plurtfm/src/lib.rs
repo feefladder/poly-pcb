@@ -12,6 +12,7 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
 
+mod design;
 mod pcbdron;
 mod polyhedron;
 #[cfg(target_arch = "wasm32")]
