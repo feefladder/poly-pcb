@@ -1,16 +1,16 @@
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::{error::Error, iter::FlatMap};
 
 use derive_more::Display;
 use exn::ResultExt;
-use log::info;
+use log::{debug, info};
+use rusqlite::Connection;
 use three_d::{
     Context, CpuMaterial, CpuModel, Gm, InstancedModel, Instances, Mat4, Mesh, Object, One,
     PhysicalMaterial, Srgba,
 };
 
-use crate::design::PcbDesign;
+use crate::design::{LampDesign, PcbDesign, PcbPath};
 use crate::{PcbId, VariantMap, polyhedron::Polyhedron};
 
 /// A PcbGon knows where which Pcb variant is on a polyhedron
@@ -60,30 +60,44 @@ impl Pcbdron {
         // I think we've done this before somewhere?
         // well, only missing_variants comes close and that's clearly different, but can still copy over the code
         // Except let's make this a nice btreemap?
-        let mut variant_map: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut variant_map: VariantMap = VariantMap::with_capacity((3..11).len());
         for n_gon in 3..=10 {
-            for variant in self
+            let variants: Vec<usize> = self
                 .polyhedron
                 .iter_ngon(n_gon)
                 .map(|idx| self.variant_map[idx])
-            {
-                variant_map
-                    .entry(n_gon)
-                    .and_modify(|e| e.push(variant))
-                    .or_insert(vec![variant]);
+                .collect();
+            if !variants.is_empty() {
+                variant_map.push((n_gon, variants));
             }
         }
-        let path = self
-            .polyhedron
-            .edge_path
-            .iter()
-            .map(|c| c.face_idx)
-            .collect();
+
+        let path = self.polyhedron.current_path().unwrap_or_else(|p| p);
+        debug!("current path: {path:?}");
         PcbDesign {
             polyhedron,
             variant_map,
             path,
         }
+    }
+
+    pub fn set_poly(&mut self, polyhedron: Polyhedron, variant_map: &VariantMap) {
+        self.polyhedron = polyhedron;
+        self.apply_variant_map(variant_map);
+    }
+
+    pub fn apply_variant_map(&mut self, variant_map: &VariantMap) {
+        self.variant_map.clear();
+        self.variant_map.resize(self.polyhedron.faces.len(), 0);
+        for (n, vars) in variant_map {
+            for (i, var) in self.polyhedron.iter_ngon(*n).zip(vars) {
+                self.variant_map[i] = *var;
+            }
+        }
+    }
+
+    pub fn update_path(&mut self, path: &PcbPath) -> Result<(), usize> {
+        self.polyhedron.apply_path(path)
     }
 }
 
@@ -110,6 +124,12 @@ pub struct MultiPcbdron {
 #[derive(Debug, Display, Clone)]
 pub struct MultiPcbdronError(String);
 impl Error for MultiPcbdronError {}
+
+impl From<String> for MultiPcbdronError {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
 
 impl MultiPcbdron {
     pub fn pcbdrons(&self) -> impl Iterator<Item = &Pcbdron> {
@@ -157,21 +177,7 @@ impl MultiPcbdron {
         polyhedron: Polyhedron,
         variant_map: &VariantMap,
     ) -> exn::Result<(), MultiPcbdronError> {
-        self.pcbdron.variant_map.clear();
-        self.pcbdron.variant_map.resize(polyhedron.faces.len(), 0);
-        for (n, vars) in &variant_map.0 {
-            for (i, var) in polyhedron
-                .faces
-                .iter()
-                .enumerate()
-                .filter_map(|(i, f)| if f.len() == *n { Some(i) } else { None })
-                .zip(vars)
-            {
-                self.pcbdron.variant_map[i] = *var;
-            }
-        }
-
-        self.pcbdron.polyhedron = polyhedron;
+        self.pcbdron.set_poly(polyhedron, variant_map);
         // so we do set new faces here, but not change/update old ones?
         self.update_instances().or_raise(|| {
             MultiPcbdronError(format!(
@@ -192,7 +198,7 @@ impl MultiPcbdron {
         variant_map: &VariantMap,
     ) -> exn::Result<Self, MultiPcbdronError> {
         let material = PhysicalMaterial::new_opaque(
-            &context,
+            context,
             &CpuMaterial {
                 albedo: Srgba::WHITE,
                 ..Default::default()
@@ -202,7 +208,7 @@ impl MultiPcbdron {
         // and not too sure how to do that?
         let mut vmap = vec![0usize; polyhedron.faces.len()];
 
-        for (ngon, vars) in &variant_map.0 {
+        for (ngon, vars) in variant_map {
             for (var, idx) in vars.iter().zip(polyhedron.iter_ngon(*ngon)) {
                 vmap[idx] = *var;
             }
@@ -223,17 +229,47 @@ impl MultiPcbdron {
             instance_map: Vec::new(),
         };
         for (n_gon, pcb_vars) in pcbs.iter().enumerate() {
-            for (variant, pcb) in pcb_vars.iter().enumerate().filter_map(|(i, p)| {
-                if let Some(pp) = p {
-                    Some((i, pp))
-                } else {
-                    None
-                }
-            }) {
-                res.add_pcb(&context, PcbId { n_gon, variant }, pcb)?;
+            for (variant, pcb) in pcb_vars
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| p.as_ref().map(|pp| (i, pp)))
+            {
+                res.add_pcb(context, PcbId { n_gon, variant }, pcb)?;
             }
         }
         Ok(res)
+    }
+
+    pub fn apply_design(
+        &mut self,
+        design: LampDesign,
+        sqlite: &Connection,
+    ) -> exn::Result<Option<LampDesign>, MultiPcbdronError> {
+        let LampDesign::SinglePoly(mut d) = design;
+        let current_design = self.pcbdron.get_design();
+        if d.polyhedron != current_design.polyhedron {
+            self.pcbdron.set_poly(
+                Polyhedron::load(sqlite, &d.polyhedron).or_raise(|| {
+                    format!("could not apply design for poly {}", d.polyhedron).into()
+                })?,
+                &d.variant_map,
+            );
+        } else if d.variant_map != current_design.variant_map {
+            self.pcbdron.apply_variant_map(&d.variant_map);
+        }
+        let res = if d.path != current_design.path {
+            match self.pcbdron.update_path(&d.path) {
+                Err(path_len) => {
+                    d.path.turns.truncate(path_len);
+                    Ok(Some(LampDesign::SinglePoly(d)))
+                }
+                Ok(_) => Ok(None),
+            }
+        } else {
+            Ok(None)
+        };
+        self.update_instances();
+        res
     }
 
     /// Add this pcb to self
@@ -266,7 +302,7 @@ impl MultiPcbdron {
             colors,
             ..Default::default()
         };
-        let instanced_model = InstancedModel::new(&context, &instances, &model)
+        let instanced_model = InstancedModel::new(context, &instances, model)
             .or_raise(|| MultiPcbdronError(format!("could not add {pcb_id:?} to multihedron")))?;
         self.pcb_models.push(instanced_model);
         self.instance_map.push(pcb_id);
@@ -274,6 +310,9 @@ impl MultiPcbdron {
         Ok(())
     }
 
+    /// Update Pcb's GPU instances
+    ///
+    /// Call this whenever variants or polyhedra change
     pub fn update_instances(&mut self) -> exn::Result<(), MultiPcbdronError> {
         // clear-and-rebuild for now, would be better to remove-insert later
         // first build own instances, then upload to GPU by changing pcb_models

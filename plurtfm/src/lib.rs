@@ -1,13 +1,19 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
-use crate::{pcbdron::MultiPcbdron, polyhedron::Polyhedron};
+#[cfg(target_arch = "wasm32")]
+use crate::design::{LampDesign, PcbDesign, Wrap};
+use crate::{design::VariantMap, pcbdron::MultiPcbdron, polyhedron::Polyhedron};
 use log::info;
-use rusqlite::{Connection, Result};
-use serde::{Deserialize, Serialize};
+use rusqlite::Connection;
+#[cfg(target_arch = "wasm32")]
+use three_d::prelude::*;
 use three_d::{
-    AmbientLight, Attenuation, Camera, ClearState, Context, CpuGeometry, CpuModel, Light, Mat4,
-    PointLight, RenderTarget, Srgba, Viewport, degrees, vec3,
+    AmbientLight, Attenuation, Camera, ClearState, Context, CpuGeometry, CpuModel, Light,
+    PointLight, RenderTarget, Viewport,
 };
+use tsify::Ts;
+#[cfg(target_arch = "wasm32")]
+use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
@@ -139,16 +145,16 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
     Ok(iface)
 }
 
-/// Per n-gon mapping
-///
-/// for truncated tetrahedron, this will only set triangles:
-/// ```
-/// use std::collections::BTreeMap;
-/// use poly_pcb::VariantMap;
-/// VariantMap(BTreeMap::from([(3, vec![0,1,1,2])]));
-/// ```
-#[derive(Serialize, Deserialize, Default, Debug)]
-pub struct VariantMap(pub BTreeMap<usize, Vec<usize>>);
+// /// Per n-gon mapping
+// ///
+// /// for truncated tetrahedron, this will only set triangles:
+// /// ```
+// /// use std::collections::BTreeMap;
+// /// use poly_pcb::VariantMap;
+// /// VariantMap(BTreeMap::from([(3, vec![0,1,1,2])]));
+// /// ```
+// #[derive(Serialize, Deserialize, Default, Debug)]
+// pub struct VariantMap(pub BTreeMap<usize, Vec<usize>>);
 
 #[wasm_bindgen]
 #[cfg(target_arch = "wasm32")]
@@ -157,7 +163,7 @@ impl Interface {
         let mut stmt = self.connection.prepare("SELECT longname FROM Polyhedron")?;
         let res = stmt
             .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(res)
     }
 
@@ -219,22 +225,21 @@ impl Interface {
 
     pub fn set_polyhedron(
         &mut self,
-        poly: &str,
-        variants: Option<JsValue>,
-    ) -> Result<JsValue, JsValue> {
-        info!("setting polyhedron to {poly}");
-        let new_poly = Polyhedron::load(&self.connection, &poly).map_err(|e| e.to_string())?;
-        if let Some(v) = variants {
-            let vm = serde_wasm_bindgen::from_value::<VariantMap>(v)?;
-            self.scene
-                .pcbdrons
-                .set_pcbdron(new_poly, &vm)
-                .map_err(|e| e.to_string())?;
-        };
+        ts_design: Ts<LampDesign>,
+    ) -> Result<Ts<Wrap<(Vec<Vec<usize>>, Option<LampDesign>)>>, JsError> {
+        let design = ts_design.to_rust()?;
+        // compare the given design to our current design
+        let maybe_corrected = self
+            .scene
+            .pcbdrons
+            .apply_design(design, &self.connection)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         // self.update_instances()?;
         // so
         self.render();
-        serde_wasm_bindgen::to_value(&self.missing_variants()).map_err(|e| e.to_string().into())
+        Wrap((self.missing_variants(), maybe_corrected))
+            .into_ts()
+            .map_err(Into::into)
     }
 
     /// Load pcb stls into the simulation

@@ -2,11 +2,10 @@ use derive_more::Display;
 use exn::{OptionExt, ResultExt};
 use log::{debug, error, info, warn};
 use rusqlite::Connection;
-use std::{
-    collections::{BTreeMap, HashMap},
-    error::Error,
-};
+use std::{collections::HashMap, error::Error};
 use three_d::*;
+
+use crate::design::PcbPath;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Polyhedron {
@@ -115,6 +114,11 @@ impl From<(u32, u32)> for Edge {
 #[derive(Debug, Display, Clone)]
 pub struct PolyError(String);
 impl Error for PolyError {}
+impl From<String> for PolyError {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
 
 impl Polyhedron {
     pub fn iter_ngon(&self, n_sides: usize) -> impl Iterator<Item = usize> {
@@ -201,12 +205,7 @@ impl Polyhedron {
                 ))
             })?
             .chunk_by(|(face_id_a, _, _), (face_id_b, _, _)| face_id_a == face_id_b)
-            .map(|slice| {
-                slice
-                    .into_iter()
-                    .map(|(_, vertex_id, _)| *vertex_id as u32)
-                    .collect()
-            })
+            .map(|slice| slice.iter().map(|(_, vertex_id, _)| *vertex_id).collect())
             .collect();
 
         let mut stmt = conn
@@ -270,20 +269,20 @@ impl Polyhedron {
         let poly_centroid = poly.centroid();
         for (face_idx, face) in poly.faces.iter_mut().enumerate() {
             poly.face_transforms
-                .push(Polyhedron::face_transform(&face, &poly.vertices));
+                .push(Polyhedron::face_transform(face, &poly.vertices));
             let z = poly.face_transforms[face_idx].z.truncate();
             let face_centroid = poly.face_transforms[face_idx].w.truncate();
             // but the rake is on the pcb's bottom side, so normal points inwards
             if z.dot(face_centroid - poly_centroid) > 0.0 {
                 face.reverse();
                 // also re-create axes with updated faces
-                poly.face_transforms[face_idx] = Polyhedron::face_transform(&face, &poly.vertices);
+                poly.face_transforms[face_idx] = Polyhedron::face_transform(face, &poly.vertices);
             }
         }
 
-        if let Some(p) = poly.find_path(0) {
-            poly.edge_path = p;
-        }
+        // if let Some(p) = poly.find_path(0) {
+        //     poly.edge_path = p;
+        // }
         Ok(poly)
     }
 
@@ -319,6 +318,13 @@ impl Polyhedron {
             z.extend(0.0),
             face_centroid.extend(1.0),
         )
+    }
+
+    /// Update face transforms based on faces
+    pub fn update_transforms(&mut self) {
+        for (i, transform) in self.face_transforms.iter_mut().enumerate() {
+            *transform = Self::face_transform(&self.faces[i], &self.vertices)
+        }
     }
 
     pub fn triangulate(&self) -> Vec<[u32; 3]> {
@@ -376,15 +382,133 @@ impl Polyhedron {
         Ok(new_model)
     }
 
+    /// Apply the given path, clearing the current one
+    ///
+    /// It is very possible that an impossible path is specified, in which case the number of successful turns is returned
+    ///
+    /// currently doesn't check very much, this will be improved as considered non-breaking changes
+    pub fn apply_path(&mut self, path: &PcbPath) -> Result<(), usize> {
+        debug!("applying path {path:?}");
+        self.edge_path.clear();
+        let start_face = self
+            .iter_ngon(path.start_ngon)
+            .nth(path.start_nth)
+            .ok_or(0usize)?;
+        if path.turns.is_empty() {
+            //
+            return Ok(());
+        } else if path.turns.len() == 1 {
+            let face_idx = start_face;
+            self.edge_path.push(PolygonCrossing {
+                face_idx,
+                enter: self.edge_from_face(face_idx, 0),
+                exit: self.edge_from_face(face_idx, 1),
+            });
+            return Ok(());
+        }
+        // we make a visited array because we rotate polygons on first visit
+        let mut visited = vec![false; self.faces.len()];
+        visited[start_face] = true;
+        let n = path.turns[0] + 1;
+        let exit = self.edge_from_face(start_face, n);
+
+        self.edge_path.push(PolygonCrossing {
+            face_idx: start_face,
+            enter: self.edge_from_face(start_face, 0),
+            exit,
+        });
+        let mut visit = PolygonVisit {
+            face_idx: self.other_face(start_face, n),
+            enter: exit.rev(),
+        };
+        for (i, turn) in path.turns.iter().enumerate().skip(1) {
+            // rotate the face so it points at the enter
+            // this is also in dfs, so maybe generify somehow?
+            if !visited[visit.face_idx] {
+                // rotate poly so we're entering on edge 0-1
+                visited[visit.face_idx] = true;
+                let rotate_amount = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
+                self.faces[visit.face_idx].rotate_left(rotate_amount);
+                // then set next visit
+                let n = turn + 1;
+                let exit = self.edge_from_face(visit.face_idx, n);
+                self.edge_path.push(visit.exit(exit));
+                visit = PolygonVisit {
+                    face_idx: self.other_face(visit.face_idx, n),
+                    enter: exit.rev(),
+                }
+            } else {
+                // re-entering a face, so now turn is counterclockwise
+                // since for any direction we'd have to solderjumper, we don't add 1
+                let n_enter = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
+                let n_exit = n_enter.checked_sub(*turn).ok_or(i)?;
+                let exit = self.edge_from_face(visit.face_idx, n_exit);
+                self.edge_path.push(visit.exit(exit));
+                visit = PolygonVisit {
+                    face_idx: self.other_face(visit.face_idx, n_exit),
+                    enter: exit.rev(),
+                };
+            }
+        }
+        let n_enter = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
+        self.edge_path
+            .push(visit.exit(self.edge_from_face(visit.face_idx, n_enter + 1)));
+        self.update_transforms();
+        Ok(())
+    }
+
+    pub fn current_path(&self) -> Result<PcbPath, PcbPath> {
+        let first_face = self.edge_path.first().ok_or(PcbPath::default())?;
+        debug!("first path face: {first_face:?}");
+        let start_ngon = self.faces[first_face.face_idx].len();
+        debug!("start_ngon: {start_ngon:?}");
+        let start_nth = self
+            .iter_ngon(start_ngon)
+            .position(|i| i == first_face.face_idx)
+            .ok_or(PcbPath {
+                start_ngon,
+                ..Default::default()
+            })?;
+        debug!("start nth: {start_nth}");
+        let mut turns = Vec::with_capacity(self.edge_path.len());
+        for PolygonCrossing {
+            face_idx,
+            enter,
+            exit,
+        } in &self.edge_path
+        {
+            if *enter == self.edge_from_face(*face_idx, 0) {
+                // first time visiting
+                turns.push(self.edge_n_on_face(*face_idx, *exit).unwrap() - 1);
+            } else {
+                let n_enter = self.edge_n_on_face(*face_idx, *enter).unwrap();
+                let n_exit = self.edge_n_on_face(*face_idx, *exit).unwrap();
+                let Some(turn) = n_enter.checked_sub(n_exit) else {
+                    return Err(PcbPath {
+                        start_ngon,
+                        start_nth,
+                        turns,
+                    });
+                };
+                turns.push(turn);
+            }
+        }
+        Ok(PcbPath {
+            start_ngon,
+            start_nth,
+            turns,
+        })
+    }
+
     /// Find a path starting at the given face
-    pub fn find_path(&mut self, start_face_idx: usize) -> Option<Path> {
+    pub fn find_path(&mut self, start_face_idx: usize) -> Option<()> {
         let mut path = Vec::with_capacity(self.faces.len() + 5);
         let mut visited = vec![false; self.faces.len()];
         let start_face = &self.faces[start_face_idx];
 
         if self.dfs(
             &mut path,
-            &mut (0..self.faces.len()).map(|i| Vec::new()).collect(),
+            &mut (0..self.faces.len()).map(|_i| Vec::new()).collect(),
             &mut visited,
             PolygonVisit {
                 face_idx: start_face_idx,
@@ -395,13 +519,11 @@ impl Polyhedron {
                 "found path {:?}",
                 path.iter().map(|pc| pc.face_idx).collect::<Vec<_>>()
             );
+            self.edge_path = path;
 
             // update face transforms
-            for visit in &path {
-                self.face_transforms[visit.face_idx] =
-                    Self::face_transform(&self.faces[visit.face_idx], &self.vertices);
-            }
-            Some(path)
+            self.update_transforms();
+            Some(())
         } else {
             warn!("did not find path for {}", self.name);
             None
@@ -420,12 +542,29 @@ impl Polyhedron {
     fn edge_from_face(&self, face_idx: usize, edge_n: usize) -> Edge {
         let f = &self.faces[face_idx];
         Edge {
-            start: f[edge_n],
+            start: f[edge_n % f.len()],
             end: f[(edge_n + 1) % f.len()],
         }
     }
 
-    /// get n of an edge
+    /// Get the edge that connects this face to the other face
+    ///
+    /// The returned direction is the direction as seen from this face
+    fn edge_from_two_faces(&self, face: usize, other_face: usize) -> exn::Result<Edge, PolyError> {
+        self.edges
+            .iter()
+            .find(|(_k, v)| v.faces == [face, other_face] || v.faces == [other_face, face])
+            .map(|(k, _v)| {
+                if self.face_edges(face, 0).any(|e| e == *k) {
+                    *k
+                } else {
+                    k.rev()
+                }
+            })
+            .ok_or_raise(|| format!("No edge connecting face {} with {}", face, other_face).into())
+    }
+
+    /// get n of an edgeedge_from_two_faces
     fn edge_n_on_face(&self, face_idx: usize, edge: Edge) -> Option<usize> {
         self.face_edges(face_idx, 0).position(|e| e == edge)
     }
@@ -502,9 +641,7 @@ impl Polyhedron {
         // for dfs we want to go left first, then cycle around the polygon.
         //
         // Also if we're revisiting the polygon, then only check next n edges
-        let n = self
-            .edge_n_on_face(visit.face_idx, visit.enter.into())
-            .unwrap();
+        let n = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
         // assert_eq!(n, 0);
         let face_edges = self.face_edges(visit.face_idx, n).collect::<Vec<_>>();
         let mut revisits = Vec::new();
@@ -539,7 +676,7 @@ impl Polyhedron {
             // but whatevs
             //
             // maybe it'd also be very fast to check if it's visited and a triangle
-            if face_path_index[n_face_idx].len() != 0 {
+            if !face_path_index[n_face_idx].is_empty() {
                 // triangle shortcut (they can't be visited twice)
                 if self.faces[n_face_idx].len() == 3 {
                     continue;
@@ -642,10 +779,10 @@ impl Polyhedron {
             .iter()
             .filter_map(|&v| {
                 let cr = path[v];
-                if let Some(e) = self.edge_n_on_face(visit.face_idx, cr.exit) {
-                    if e < n {
-                        return Some(e);
-                    }
+                if let Some(e) = self.edge_n_on_face(visit.face_idx, cr.exit)
+                    && e < n
+                {
+                    return Some(e);
                 }
                 None
             })
@@ -660,7 +797,7 @@ impl Polyhedron {
         for edge_n in (largest_smaller_n..n - 1).rev() {
             let e = self.edge_from_face(visit.face_idx, edge_n);
             let n_face_idx = self.other_face(visit.face_idx, edge_n);
-            if face_path_index[n_face_idx].len() == 0 {
+            if face_path_index[n_face_idx].is_empty() {
                 face_path_index[visit.face_idx].push(path.len());
                 path.push(visit.exit(e));
                 if self.dfs(
@@ -800,9 +937,9 @@ mod test {
             face_transforms: vec![Mat4::zero(); 4],
             edge_path: Vec::new(),
         };
-        let p = tet.find_path(0).unwrap();
+        tet.find_path(0).unwrap();
         assert_eq!(
-            p,
+            tet.edge_path,
             vec![
                 PolygonCrossing {
                     face_idx: 0,

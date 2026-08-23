@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, type Ref } from "vue";
-import { Interface, PcbId, VarId } from "./pkg/poly_pcb.js";
+import {
+    CurrentStep,
+    Interface,
+    PcbId,
+    VarId,
+    type PcbDesign,
+} from "./pkg/poly_pcb.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
 // hot reload triggers full page reload to fix double-init wasm
@@ -14,22 +20,14 @@ if (import.meta.hot) {
 type VariantMap = [number, number[]][];
 type Path = number[];
 
-interface UiState {
-    mode: "select" | "path";
-
-    polyhedron: string;
-    variantMap: VariantMap;
-    path: Path;
-}
-
 const polyhedra: Ref<string[]> = ref([]);
 const pcbLoader = ref<PcbLoader | null>(null);
 const canvas = ref();
-const uiState = ref<UiState>({
-    mode: "select",
+const mode = ref<CurrentStep>(CurrentStep.SelectPoly);
+const uiState = ref<PcbDesign>({
     polyhedron: "tetrahedron",
-    variantMap: [[3, [4, 0, 1, 2]]],
-    path: [0, 1, 2, 3],
+    variant_map: [[3, [4, 0, 1, 2]]],
+    path: { start_ngon: 3, start_nth: 0, turns: [0, 0, 1, 1] },
 });
 
 let iface: Interface;
@@ -38,7 +36,10 @@ window.addEventListener("hashchange", () => {
     apply_url();
 });
 
-function update_url(name: string, map: VariantMap) {
+function update_url() {
+    const name = uiState.value.polyhedron;
+    const map = uiState.value.variant_map;
+    const path = uiState.value.path;
     let hash = `#/${name.replace(/ /g, "-")}`;
 
     const params = new URLSearchParams();
@@ -47,6 +48,12 @@ function update_url(name: string, map: VariantMap) {
         params.set(
             nGon.toString(),
             variants.map((v) => v.toString(16)).join(""),
+        );
+    }
+    if (path.turns) {
+        params.set(
+            "path",
+            `${path.start_ngon}.${path.start_nth}-${path.turns.map((t) => t.toString(16)).join("")}`,
         );
     }
 
@@ -64,13 +71,32 @@ function apply_url() {
     const [polyUrl, query = ""] = hash.split("?", 2);
     const polyhedron = polyUrl?.toLowerCase().replace(/[-_ ]+/g, " ");
     const entries: [number, number[]][] = [];
+    const params = new URLSearchParams(query);
 
-    for (const [nGon, encoded] of new URLSearchParams(query)) {
+    for (const [key, encoded] of params) {
+        const nGon = Number(key);
+        if (!Number.isInteger(nGon) || nGon < 3 || nGon > 10) continue;
         entries.push([Number(nGon), [...encoded].map((c) => parseInt(c, 16))]);
     }
 
-    if (entries.length > 0 && entries !== uiState.value.variantMap) {
-        uiState.value.variantMap = entries;
+    const encodedPath = params.get("path");
+
+    if (encodedPath !== null) {
+        const match = encodedPath.match(/^(\d+)\.(\d+)(?:-(.*))?$/);
+
+        if (match) {
+            const [, startNgon, startNth, turns = ""] = match;
+
+            uiState.value.path = {
+                start_ngon: Number(startNgon),
+                start_nth: Number(startNth),
+                turns: [...turns].map((c) => parseInt(c, 16)),
+            };
+        }
+    }
+
+    if (entries.length > 0 && entries !== uiState.value.variant_map) {
+        uiState.value.variant_map = entries;
     }
 
     if (
@@ -118,16 +144,18 @@ watch(
                 "setting poly ",
                 state.polyhedron,
                 "with variant map",
-                state.variantMap,
+                state.variant_map,
             );
-            let missing_variants: Array<Array<number>> = iface.set_polyhedron(
-                state.polyhedron,
-                state.variantMap,
-            );
+            const [missing_variants, corrected_design] = iface.set_polyhedron({
+                SinglePoly: uiState.value,
+            });
+            if (corrected_design !== null) {
+                state = corrected_design;
+            }
             console.log("missing variants", missing_variants);
             pcbLoader.value!.requestMany(missing_variants);
         }
-        update_url(state.polyhedron, state.variantMap);
+        update_url();
     },
     { deep: true },
 );
@@ -145,11 +173,11 @@ function on_request_pcb(var_id: VarId) {
         variant = 0;
     }
 
-    let entry = uiState.value.variantMap.find(([n]) => n === n_gon);
+    let entry = uiState.value.variant_map.find(([n]) => n === n_gon);
 
     if (!entry) {
         entry = [n_gon, []];
-        uiState.value.variantMap.push(entry);
+        uiState.value.variant_map.push(entry);
     }
 
     const variants = entry[1];
@@ -185,6 +213,9 @@ function on_request_pcb(var_id: VarId) {
                     (e: CustomEventInit<VarId>) => {
                         on_request_pcb(e.detail!);
                     }
+                "
+                @design_changed="
+                    (e: CustomEventInit<PcbDesign>) => (uiState = e.detail!)
                 "
                 @pointerdown="iface?.on_pointer_down"
                 @pointermove="iface?.on_pointer_move"

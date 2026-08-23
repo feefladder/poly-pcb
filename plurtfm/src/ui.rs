@@ -2,13 +2,20 @@
 //!
 //! anything responding to events, because it was growing too big
 
-use exn::ResultExt;
 use log::info;
 use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
+use tsify::Tsify;
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
 use crate::{Interface, PcbId, VarId};
+
+#[wasm_bindgen]
+pub enum CurrentStep {
+    SelectPoly,
+    AssignVariants,
+    MakePath,
+}
 
 #[wasm_bindgen]
 impl Interface {
@@ -150,10 +157,20 @@ impl Interface {
                 }
                 pcbdron.variant_map[face_id] = 4;
                 pcbdron.polyhedron.find_path(face_id);
+                let design = pcbdron.get_design();
+                let e_detail = CustomEventInit::new();
+                e_detail.set_detail(&design.into_ts().unwrap().into());
+                self.canvas
+                    .dispatch_event(
+                        &CustomEvent::new_with_event_init_dict("design_changed", &e_detail)
+                            .unwrap(),
+                    )
+                    .unwrap();
                 self.scene
                     .pcbdrons
                     .update_instances()
                     .map_err(|e| JsError::new(&e.to_string()))?;
+
                 self.render();
             } else {
                 let pcbdron = self.scene.pcbdrons.pcbdrons().nth(0).unwrap();
