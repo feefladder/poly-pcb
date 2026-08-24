@@ -8,7 +8,7 @@ use tsify::Tsify;
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
-use crate::{Interface, PcbId, VarId};
+use crate::{Interface, PcbId, VarFlags, VarId};
 
 #[wasm_bindgen]
 pub enum CurrentStep {
@@ -151,9 +151,7 @@ impl Interface {
                 let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
                 info!("while holding ctrl");
                 for v in pcbdron.variant_map.iter_mut() {
-                    if *v & 4 == 4 {
-                        *v ^= 4
-                    }
+                    VarFlags::Controller.rm(v);
                 }
                 pcbdron.variant_map[face_id] = 4;
                 pcbdron.polyhedron.find_path(face_id);
@@ -170,7 +168,7 @@ impl Interface {
                     .pcbdrons
                     .update_instances()
                     .map_err(|e| JsError::new(&e.to_string()))?;
-
+                self.scene.pcbdrons.update_debug_path();
                 self.render();
             } else {
                 let pcbdron = self.scene.pcbdrons.pcbdrons().nth(0).unwrap();

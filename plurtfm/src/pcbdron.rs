@@ -6,11 +6,14 @@ use exn::ResultExt;
 use log::{debug, info};
 use rusqlite::Connection;
 use three_d::{
-    Context, CpuMaterial, CpuModel, Gm, InstancedModel, Instances, Mat4, Mesh, Object, One,
-    PhysicalMaterial, Srgba,
+    Axes, ColorMaterial, Context, CpuMaterial, CpuMesh, CpuModel, Gm, InnerSpace, InstancedMesh,
+    InstancedModel, Instances, Mat4, Matrix4, Mesh, Object, One, PhysicalMaterial, Srgba, Vec3,
 };
+use wasm_bindgen::instance;
 
+use crate::VarFlags;
 use crate::design::{LampDesign, PcbDesign, PcbPath};
+use crate::polyhedron::PolygonCrossing;
 use crate::{PcbId, VariantMap, polyhedron::Polyhedron};
 
 /// A PcbGon knows where which Pcb variant is on a polyhedron
@@ -109,6 +112,8 @@ impl Pcbdron {
 pub struct MultiPcbdron {
     pcbdron: Pcbdron,
     /// The actual pcbs, including their transforms
+    ///
+    /// These are InstancedModels to support multi-mesh gltf pcbs
     pcb_models: Vec<InstancedModel<PhysicalMaterial>>,
     /// where is a specific pcb in instances?
     /// why is this not just Vec<PcbId>?
@@ -119,6 +124,12 @@ pub struct MultiPcbdron {
     /// even though it's just a vec of transforms, so kinda useless
     /// maybe better keep Vec<Vec<Mat4>>
     instances: Vec<Instances>,
+    /// arrow instances(transforms)
+    path_instances: Instances,
+    /// Show the path as ugly blue arrows
+    ///
+    /// This is a simple instancedmesh
+    path_gm: Gm<InstancedMesh, ColorMaterial>,
 }
 
 #[derive(Debug, Display, Clone)]
@@ -134,6 +145,10 @@ impl From<String> for MultiPcbdronError {
 impl MultiPcbdron {
     pub fn pcbdrons(&self) -> impl Iterator<Item = &Pcbdron> {
         std::iter::once(&self.pcbdron)
+    }
+
+    pub fn debug_path(&self) -> &Gm<InstancedMesh, ColorMaterial> {
+        &self.path_gm
     }
 
     pub fn pcbdrons_mut(&mut self) -> impl Iterator<Item = &mut Pcbdron> {
@@ -213,6 +228,11 @@ impl MultiPcbdron {
                 vmap[idx] = *var;
             }
         }
+        let path_instances = Instances {
+            transformations: Vec::with_capacity(polyhedron.faces.len()),
+            colors: Some(Vec::with_capacity(polyhedron.faces.len())),
+            ..Default::default()
+        };
         // I think it's simpler to just create an empty version and add pcbs later
         let pcbdron = Pcbdron {
             transform: Mat4::one(),
@@ -222,11 +242,23 @@ impl MultiPcbdron {
             })?,
             polyhedron,
         };
+
         let mut res = Self {
             pcbdron,
             pcb_models: Vec::new(),
             instances: Vec::new(),
             instance_map: Vec::new(),
+            path_gm: Gm::new(
+                InstancedMesh::new(context, &path_instances, &CpuMesh::arrow(0.8, 0.5, 8)),
+                ColorMaterial::new_opaque(
+                    context,
+                    &CpuMaterial {
+                        albedo: Srgba::WHITE,
+                        ..Default::default()
+                    },
+                ),
+            ),
+            path_instances,
         };
         for (n_gon, pcb_vars) in pcbs.iter().enumerate() {
             for (variant, pcb) in pcb_vars
@@ -268,7 +300,8 @@ impl MultiPcbdron {
         } else {
             Ok(None)
         };
-        self.update_instances();
+        self.update_instances()?;
+        self.update_debug_path();
         res
     }
 
@@ -345,6 +378,70 @@ impl MultiPcbdron {
         }
         Ok(())
     }
+
+    pub fn update_debug_path(&mut self) {
+        // so here we basically want to have arrows that point in the right directions or something
+        // maybe we can also do that with an instancedmodel of an arrow?
+        let hedron = &self.pcbdron.polyhedron;
+        let instances = &mut self.path_instances;
+        instances.transformations.clear();
+        let colors = instances.colors.as_mut().unwrap();
+        colors.clear();
+        let imax = hedron.edge_path.len() - 1;
+        for (
+            i,
+            PolygonCrossing {
+                face_idx,
+                enter,
+                exit,
+            },
+        ) in hedron.edge_path.iter().enumerate()
+        {
+            if i == 0 && VarFlags::Controller.has(self.pcbdron.variant_map[*face_idx]) {
+                // for the first, just give the output arrow
+                instances.transformations.push(from_to_transform(
+                    hedron.face_centroid(*face_idx),
+                    hedron.edge_centroid(*exit),
+                    hedron.face_normal(*face_idx),
+                ));
+            } else if i == imax {
+                // for the last, just give the enter arrow
+                instances.transformations.push(from_to_transform(
+                    hedron.edge_centroid(*enter),
+                    hedron.face_centroid(*face_idx),
+                    hedron.face_normal(*face_idx),
+                ));
+            } else {
+                // point from edge to edge
+                instances.transformations.push(from_to_transform(
+                    hedron.edge_centroid(*enter),
+                    hedron.edge_centroid(*exit),
+                    hedron.face_normal(*face_idx),
+                ));
+            }
+            let c = colorous::MAGMA.eval_rational(i, imax);
+            colors.push(Srgba::new_opaque(c.r, c.g, c.b));
+        }
+        // build instances
+        //         self.path_instances
+        self.path_gm.set_instances(&self.path_instances);
+    }
+}
+
+/// For making an arrow, width is set to the constant 0.1
+///
+/// `z` is assumed orthonormal wrt `start->end`
+fn from_to_transform(start: Vec3, end: Vec3, z: Vec3) -> Mat4 {
+    const WIDTH: f32 = 0.1;
+    let w = start;
+    let x = end - start;
+    let y = z.cross(x).normalize();
+    Mat4::from_cols(
+        x.extend(0.0),
+        y.extend(0.0) * WIDTH,
+        z.extend(0.0) * WIDTH,
+        w.extend(1.0),
+    )
 }
 
 impl<'a> IntoIterator for &'a MultiPcbdron {

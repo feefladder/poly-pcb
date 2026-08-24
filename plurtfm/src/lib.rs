@@ -11,9 +11,9 @@ use three_d::{
     AmbientLight, Attenuation, Camera, ClearState, Context, CpuGeometry, CpuModel, Light,
     PointLight, RenderTarget, Viewport,
 };
-use tsify::Ts;
 #[cfg(target_arch = "wasm32")]
 use tsify::Tsify;
+use tsify::{Ts, declare};
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
@@ -35,6 +35,48 @@ pub struct PcbId {
 pub struct VarId {
     pub nth_ngon: usize,
     pub pcb_id: PcbId,
+}
+
+/// Planned variants
+///
+/// Not all variants exist physically for all ngons
+///
+/// This already exhausts the single-digit hexadecimal representation
+/// So development gets a "hard" limit lol
+pub enum VarFlags {
+    Cut = 1,
+    HalfLeds = 2,
+    Controller = 4,
+    Power = 8,
+}
+
+impl VarFlags {
+    pub fn b0(self) -> usize {
+        self as usize
+    }
+    /// Remove this option
+    #[inline]
+    pub fn rm(self, var: &mut usize) {
+        *var &= !self.b0()
+    }
+
+    /// check if this bit is set
+    #[inline]
+    pub fn has(self, var: usize) -> bool {
+        self.b0() & var != 0
+    }
+
+    /// Add this option
+    #[inline]
+    pub fn add(self, var: &mut usize) {
+        *var |= self.b0()
+    }
+
+    /// Toggle this option
+    #[inline]
+    pub fn switch(self, var: &mut usize) {
+        *var ^= self.b0()
+    }
 }
 
 /// The interface is the entrypoint for wasm
@@ -213,7 +255,10 @@ impl Interface {
             .clear(ClearState::color_and_depth(0.1, 0.1, 0.2, 0.0, 1.0))
             .render(
                 &self.scene.camera,
-                self.scene.pcbdrons.into_iter(),
+                self.scene
+                    .pcbdrons
+                    .into_iter()
+                    .chain(self.scene.pcbdrons.debug_path().into_iter()),
                 &self
                     .scene
                     .lights

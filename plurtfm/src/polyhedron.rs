@@ -133,6 +133,18 @@ impl Polyhedron {
         self.vertices.iter().sum::<Vec3>() / self.vertices.len() as f32
     }
 
+    pub fn face_centroid(&self, face_idx: usize) -> Vec3 {
+        self.face_transforms[face_idx].w.truncate()
+    }
+
+    pub fn edge_centroid(&self, edge: Edge) -> Vec3 {
+        (self.vertices[edge.start as usize] + self.vertices[edge.end as usize]) / 2.0
+    }
+
+    pub fn face_normal(&self, face_idx: usize) -> Vec3 {
+        self.face_transforms[face_idx].z.truncate()
+    }
+
     pub fn load(conn: &Connection, longname: &str) -> exn::Result<Polyhedron, PolyError> {
         let poly_id: i64 = conn
             .query_row(
