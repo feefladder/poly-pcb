@@ -14,6 +14,7 @@ pub struct PcbPath {
     /// for next time visit it means `counterclockwise from enter` (no +-1)
     pub turns: Vec<usize>,
 }
+
 impl Default for PcbPath {
     fn default() -> Self {
         PcbPath {

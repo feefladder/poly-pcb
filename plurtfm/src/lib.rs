@@ -5,6 +5,7 @@ use crate::design::{LampDesign, PcbDesign, Wrap};
 use crate::{design::VariantMap, pcbdron::MultiPcbdron, polyhedron::Polyhedron};
 use log::info;
 use rusqlite::Connection;
+use serde::Serialize;
 #[cfg(target_arch = "wasm32")]
 use three_d::prelude::*;
 use three_d::{
@@ -23,6 +24,9 @@ mod pcbdron;
 mod polyhedron;
 #[cfg(target_arch = "wasm32")]
 mod ui;
+
+#[derive(Tsify, Serialize)]
+pub struct SetResult(pub Vec<Vec<usize>>, pub Option<LampDesign>);
 
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -51,6 +55,7 @@ pub enum VarFlags {
 }
 
 impl VarFlags {
+    /// Get the binary representation
     pub fn b0(self) -> usize {
         self as usize
     }
@@ -268,10 +273,7 @@ impl Interface {
             );
     }
 
-    pub fn set_polyhedron(
-        &mut self,
-        ts_design: Ts<LampDesign>,
-    ) -> Result<Ts<Wrap<(Vec<Vec<usize>>, Option<LampDesign>)>>, JsError> {
+    pub fn set_polyhedron(&mut self, ts_design: Ts<LampDesign>) -> Result<Ts<SetResult>, JsError> {
         let design = ts_design.to_rust()?;
         // compare the given design to our current design
         let maybe_corrected = self
@@ -282,7 +284,7 @@ impl Interface {
         // self.update_instances()?;
         // so
         self.render();
-        Wrap((self.missing_variants(), maybe_corrected))
+        SetResult(self.missing_variants(), maybe_corrected)
             .into_ts()
             .map_err(Into::into)
     }

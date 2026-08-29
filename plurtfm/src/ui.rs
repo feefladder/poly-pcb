@@ -71,6 +71,7 @@ impl Interface {
                 )
                 .unwrap();
         }
+        self.scene.pcbdrons.update_debug_path();
         self.render();
         Ok(())
     }

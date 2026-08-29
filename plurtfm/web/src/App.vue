@@ -150,7 +150,7 @@ watch(
                 SinglePoly: uiState.value,
             });
             if (corrected_design !== null) {
-                state = corrected_design;
+                state = corrected_design.SinglePoly;
             }
             console.log("missing variants", missing_variants);
             pcbLoader.value!.requestMany(missing_variants);

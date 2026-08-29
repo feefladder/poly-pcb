@@ -383,10 +383,18 @@ impl MultiPcbdron {
         // so here we basically want to have arrows that point in the right directions or something
         // maybe we can also do that with an instancedmodel of an arrow?
         let hedron = &self.pcbdron.polyhedron;
+
         let instances = &mut self.path_instances;
         instances.transformations.clear();
         let colors = instances.colors.as_mut().unwrap();
         colors.clear();
+
+        // we still want to clear everything on "no path"
+        // so then we return early, avoiding the overflow-subtract below
+        if hedron.edge_path.is_empty() {
+            self.path_gm.set_instances(&self.path_instances);
+            return;
+        }
         let imax = hedron.edge_path.len() - 1;
         for (
             i,
