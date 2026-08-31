@@ -607,6 +607,8 @@ impl Polyhedron {
     /// Make a path, starting at the given face.
     ///
     /// If a path is found, will update self
+    ///
+    /// path is a path as found on self, and face_path_index is an index of where in the path a given face can be found
     fn dfs(
         &mut self,
         path: &mut Path,
@@ -633,14 +635,15 @@ impl Polyhedron {
         //
         // anyways, let's add a poly.edge(face_idx, id) or something?
         // it almost feels like having some silly type that is Face(Vec<u32>) just to be able to nicen the zip(skip) iterator hell?
-        if !visited[visit.face_idx] {
-            // rotate poly so we're entering on edge 0-1
-            visited[visit.face_idx] = true;
-            let rotate_amount = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
-            self.faces[visit.face_idx].rotate_left(rotate_amount);
-        }
-
-        // success condition: all faces visited
+        assert!(
+            !visited[visit.face_idx],
+            "should call revisit_dfs when revisiting {path:?}"
+        );
+        // rotate poly so we're entering on edge 0-1
+        visited[visit.face_idx] = true;
+        let rotate_amount = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
+        self.faces[visit.face_idx].rotate_left(rotate_amount);
+        // success condition: all faces visited (this can only happen on first visit)
         if visited.iter().all(|v| *v) {
             // add current visit
             // exit is first possible exit
@@ -653,20 +656,19 @@ impl Polyhedron {
         // for dfs we want to go left first, then cycle around the polygon.
         //
         // Also if we're revisiting the polygon, then only check next n edges
-        let n = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
-        // assert_eq!(n, 0);
-        let face_edges = self.face_edges(visit.face_idx, n).collect::<Vec<_>>();
+        let face_edges = self.face_edges(visit.face_idx, 0).collect::<Vec<_>>();
         let mut revisits = Vec::new();
         let mut n_new_faces = 0;
-        // skip entering edge
+        // skip entering edge and only test two??
+        // no, that's wrong, we only test two _past the last revisit_
         for (i, edge) in face_edges.iter().enumerate().skip(1) {
-            let enter_idx = i + n;
             // check if we're visiting an already-crossed polygon
             //
             // here we check for all polyhedron faces if it contains this edge, which is kinda inefficient
-            debug_assert_eq!(&self.edge_from_face(visit.face_idx, enter_idx), edge);
-            let n_face_idx = self.other_face(visit.face_idx, enter_idx);
+            let n_face_idx = self.other_face(visit.face_idx, i);
 
+            // what's this again?
+            // something like checking if it's already entered earlier
             if face_path_index[n_face_idx]
                 .iter()
                 .any(|&crossing_idx| path[crossing_idx].enter == edge.rev())
@@ -708,8 +710,10 @@ impl Polyhedron {
                 // but also,
                 if !face_path_index[n_face_idx].iter().any(|&i| {
                     let cr = path[i];
-                    self.edge_n_on_face(n_face_idx, cr.enter).unwrap() <= enter_idx
-                        && self.edge_n_on_face(n_face_idx, cr.exit).unwrap() >= enter_idx
+                    (self.edge_n_on_face(n_face_idx, cr.enter).unwrap() < i
+                        && self.edge_n_on_face(n_face_idx, cr.exit).unwrap() > i)
+                        || cr.enter == edge.rev()
+                        || cr.exit == edge.rev()
                 }) {
                     revisits.push((
                         visit.exit(*edge),
@@ -739,7 +743,6 @@ impl Polyhedron {
                 if n_new_faces == 2 {
                     break;
                 }
-                // break;
             }
         }
         for revisit in revisits {
@@ -754,7 +757,7 @@ impl Polyhedron {
             //         .collect::<Vec<_>>()
             // );
             // So here it'd be better to do some alternative "I'm revisiting a face!"-type dfs
-            if self.dfs(path, face_path_index, visited, revisit.1) {
+            if self.revisit_dfs(path, face_path_index, visited, revisit.1) {
                 return true;
             }
         }
@@ -777,36 +780,62 @@ impl Polyhedron {
         visited: &mut Vec<bool>,
         visit: PolygonVisit,
     ) -> bool {
-        // so we want to go like
-        // wait... on hexagon, 01  45  23 is allowed actually and below would disregard that
-        // even though in the order thingy, that would make more sense
         // ```
         //    3
         // 2 /-\ 4
         // 1 \_/ 5
         //    0
         // ```
+        // Since we're spiralling, the most likely face we'd enter on is 5
+        // then we want to check 2->4 in that order
+        //
+        // If in stead, we'd be entering through 3, we'd dfs 2,5,4
+        // even though bla..
+        // what's bla?
+        // bla is that going in 5 direction will kind of force a spiral, because the 4-face needs to be visited and then is locked in
+        // So... 5 is actually forcing a spiral,
+        // but 4 would be forcing a spiral the other way around
+        // so it's all a bit suboptimal to be entering on 3
+
         let n = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
-        let Some(largest_smaller_n) = face_path_index[visit.face_idx]
+        debug!("revisiting face {:?} from edge {n}", visit.face_idx);
+        let largest_smaller_n = face_path_index[visit.face_idx]
             .iter()
             .filter_map(|&v| {
                 let cr = path[v];
-                if let Some(e) = self.edge_n_on_face(visit.face_idx, cr.exit)
-                    && e < n
-                {
-                    return Some(e);
-                }
-                None
+                let e = self.edge_n_on_face(visit.face_idx, cr.exit).unwrap();
+                if e < n { Some(e) } else { None }
             })
             .max()
-        else {
-            error!(
-                "Could not find largest smaller n for {visit:?}, {:?}",
-                path[face_path_index[visit.face_idx][0]]
-            );
-            return false;
-        };
-        for edge_n in (largest_smaller_n..n - 1).rev() {
+            .unwrap_or(n);
+        // else {
+        //     error!(
+        //         "Could not find largest smaller n for {:?}, {:?}",
+        //         self.edge_n_on_face(visit.face_idx, visit.enter),
+        //         face_path_index[visit.face_idx]
+        //             .iter()
+        //             .map(|&v| {
+        //                 let c = path[v];
+        //                 (
+        //                     // self.edge_n_on_face(visit.face_idx, c.enter),
+        //                     self.edge_n_on_face(visit.face_idx, c.exit),
+        //                 )
+        //             })
+        //             .collect::<Vec<_>>()
+        //     );
+        //     return false;
+        // };
+        // If there's no larger n, we'll try till the end of the face
+        let smallest_larger_n = face_path_index[visit.face_idx]
+            .iter()
+            .filter_map(|&v| {
+                let cr = path[v];
+                let e = self.edge_n_on_face(visit.face_idx, cr.exit).unwrap();
+                if e > n { Some(e) } else { None }
+            })
+            .min()
+            .unwrap_or(self.faces[visit.face_idx].len());
+        for edge_n in (largest_smaller_n..n).chain(n + 1..smallest_larger_n) {
             let e = self.edge_from_face(visit.face_idx, edge_n);
             let n_face_idx = self.other_face(visit.face_idx, edge_n);
             if face_path_index[n_face_idx].is_empty() {
@@ -823,11 +852,19 @@ impl Polyhedron {
                 ) {
                     return true;
                 }
+            } else {
+                // revisiting from a revisit, that's sad
+                // so just give up?
+                if let Some(v) = path.pop() {
+                    face_path_index[v.face_idx].pop();
+                }
+                return false;
             }
         }
-        if let Some(v) = path.pop() {
-            face_path_index[v.face_idx].pop();
-        }
+        // it could be that above for loop didn't run, so that's also a fail
+        // if let Some(v) = path.pop() {
+        //     face_path_index[v.face_idx].pop();
+        // }
         false
     }
 }

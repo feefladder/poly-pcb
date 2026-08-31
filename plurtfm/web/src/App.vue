@@ -30,6 +30,9 @@ const uiState = ref<PcbDesign>({
     path: { start_ngon: 3, start_nth: 0, turns: [0, 0, 1, 1] },
 });
 
+const steps = Object.values(CurrentStep).filter(
+    (step): step is CurrentStep => typeof step === "number",
+);
 let iface: Interface;
 
 window.addEventListener("hashchange", () => {
@@ -191,60 +194,106 @@ function on_request_pcb(var_id: VarId) {
 </script>
 
 <template>
-    <div class="layout">
-        <aside class="sidebar">
-            <select v-model="uiState.polyhedron">
-                <option v-for="name in polyhedra" :key="name">
-                    {{ name }}
-                </option>
-            </select>
-            <p v-if="pcbLoader?.busy">
-                Loading PCBs ({{ pcbLoader.loadingCount }})...
-            </p>
-        </aside>
+    <div class="canvas-container">
+        <header>
+            <button :disabled="mode === steps[0]" @click="mode--">&lt;</button>
 
-        <main class="viewport-container">
-            <canvas
-                ref="canvas"
-                tabindex="0"
-                @keydown="iface.on_key"
-                @next_polyhedron="uiState.polyhedron = $event.detail"
-                @request_pcb="
-                    (e: CustomEventInit<VarId>) => {
-                        on_request_pcb(e.detail!);
-                    }
-                "
-                @design_changed="
-                    (e: CustomEventInit<PcbDesign>) => (uiState = e.detail!)
-                "
-                @pointerdown="iface?.on_pointer_down"
-                @pointermove="iface?.on_pointer_move"
-                @pointerup="iface?.on_pointer_up"
-                @wheel.prevent="iface?.on_wheel"
-                @click="iface?.on_click"
-                @dblclick="iface?.next_polyhedron"
-            ></canvas>
-        </main>
+            <template v-for="(step, i) in steps" :key="step">
+                <div>
+                    <button
+                        :disabled="step < mode"
+                        :style="{
+                            fontWeight: step === mode ? 'bold' : 'normal',
+                        }"
+                        @click="mode = step"
+                    >
+                        {{ i + 1 }}. {{ CurrentStep[step] }}
+                    </button>
+
+                    <select
+                        v-if="step === CurrentStep.SelectPoly && mode === step"
+                        v-model="uiState.polyhedron"
+                    >
+                        <option v-for="name in polyhedra" :key="name">
+                            {{ name }}
+                        </option>
+                    </select>
+                </div>
+
+                <span v-if="i < steps.length - 1">────</span>
+            </template>
+
+            <button
+                :disabled="mode === steps[steps.length - 1]"
+                @click="mode++"
+            >
+                &gt;
+            </button>
+        </header>
+        <canvas
+            ref="canvas"
+            tabindex="0"
+            @keydown="iface.on_key"
+            @next_polyhedron="uiState.polyhedron = $event.detail"
+            @request_pcb="
+                (e: CustomEventInit<VarId>) => {
+                    on_request_pcb(e.detail!);
+                }
+            "
+            @design_changed="
+                (e: CustomEventInit<PcbDesign>) => (uiState = e.detail!)
+            "
+            @pointerdown="iface?.on_pointer_down"
+            @pointermove="iface?.on_pointer_move"
+            @pointerup="iface?.on_pointer_up"
+            @wheel.prevent="iface?.on_wheel"
+            @click="iface?.on_click"
+            @dblclick="iface?.next_polyhedron"
+        ></canvas>
     </div>
 </template>
 
 <style>
-.layout {
-    display: flex;
-    height: 100vh;
+.canvas-container {
+    height: 100%;
+    width: 100%;
+    position: relative;
+    z-index: 0;
 }
 
-.sidebar {
-    width: 250px;
-}
-
-.viewport-container {
-    flex: 1;
-}
-
-.viewport-container canvas {
+.canvas-container canvas {
+    position: absolute;
+    top: 0;
     width: 100%;
     height: 100%;
+    z-index: 0;
     display: block;
+}
+
+button,
+select {
+    padding: 0.5rem 1rem;
+    background: #2ec27e;
+    border-radius: 1rem;
+    border: 1px solid #26a269;
+}
+
+select option {
+    background: #2ec27e;
+    color: #fff;
+}
+
+header {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1rem;
+
+    backdrop-filter: blur(8px);
+    pointer-events: all;
 }
 </style>
