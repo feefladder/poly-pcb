@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, type Ref } from "vue";
+import { ref, onMounted, watch, type Ref, computed } from "vue";
 import {
     type CurrentStep,
     Interface,
@@ -7,6 +7,7 @@ import {
     VarId,
     type PcbDesign,
     type Steps,
+    type VarFlags,
 } from "./pkg/poly_pcb.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
@@ -25,22 +26,34 @@ const polyhedra: Ref<string[]> = ref([]);
 const pcbLoader = ref<PcbLoader | null>(null);
 const canvas = ref();
 const mode = ref<number>(0);
-const uiState = ref<PcbDesign>({
+const design = ref<PcbDesign>({
     polyhedron: "tetrahedron",
     variant_map: [[3, [4, 0, 1, 2]]],
     path: { start_ngon: 3, start_nth: 0, turns: [0, 0, 1, 1] },
 });
 let iface: Interface;
 const allSteps: Ref<CurrentStep[]> = ref([]);
+const allVariants: Ref<VarFlags[]> = ref([]);
+const currentStep = computed<CurrentStep | undefined>(() => {
+  if (mode.value === 1) {
+    return { AssignVariants: currentVar.value };
+  } else {
+    return allSteps.value[mode.value];
+}
+});
+const currentVariant: Ref<number[]> = ref([]);
+const currentVar = computed<number>(() => {
+  return currentVariant.value.reduce((mask, variant) => mask | (1 << variant), 0);
+});
 
 window.addEventListener("hashchange", () => {
     apply_url();
 });
 
 function update_url() {
-    const name = uiState.value.polyhedron;
-    const map = uiState.value.variant_map;
-    const path = uiState.value.path;
+    const name = design.value.polyhedron;
+    const map = design.value.variant_map;
+    const path = design.value.path;
     let hash = `#/${name.replace(/ /g, "-")}`;
 
     const params = new URLSearchParams();
@@ -88,7 +101,7 @@ function apply_url() {
         if (match) {
             const [, startNgon, startNth, turns = ""] = match;
 
-            uiState.value.path = {
+            design.value.path = {
                 start_ngon: Number(startNgon),
                 start_nth: Number(startNth),
                 turns: [...turns].map((c) => parseInt(c, 16)),
@@ -96,23 +109,23 @@ function apply_url() {
         }
     }
 
-    if (entries.length > 0 && entries !== uiState.value.variant_map) {
-        uiState.value.variant_map = entries;
+    if (entries.length > 0 && entries !== design.value.variant_map) {
+        design.value.variant_map = entries;
     }
 
     if (
         polyhedron &&
         polyhedra.value.includes(polyhedron) &&
-        uiState.value.polyhedron != polyhedron
+        design.value.polyhedron != polyhedron
     ) {
         console.log(
             "setting polyhedron to ",
             polyhedron,
             " because ",
-            uiState.value.polyhedron,
+            design.value.polyhedron,
             " is different ",
         );
-        uiState.value.polyhedron = polyhedron;
+        design.value.polyhedron = polyhedron;
     } else {
         console.log("could not find ", polyhedron);
         // do nothing
@@ -125,6 +138,7 @@ onMounted(async () => {
     await wasm.default();
     let db = await loadAsset("polydb.sqlite3");
     allSteps.value = wasm.steps();
+    allVariants.value = wasm.var_flags();
     console.log(allSteps);
     iface = wasm.init_iface(canvas.value!, db!);
     pcbLoader.value = new PcbLoader(iface);
@@ -140,7 +154,7 @@ onMounted(async () => {
 });
 
 watch(
-    uiState,
+    design,
     async (state) => {
         if (iface) {
             console.log(
@@ -150,7 +164,7 @@ watch(
                 state.variant_map,
             );
             const [missing_variants, corrected_design] = iface.set_polyhedron({
-                SinglePoly: uiState.value,
+                SinglePoly: design.value,
             });
             if (corrected_design !== null) {
                 state = corrected_design.SinglePoly;
@@ -161,6 +175,24 @@ watch(
         update_url();
     },
     { deep: true },
+);
+
+watch(
+  currentStep,
+  (step) => {
+    if (iface && step) {
+      iface.set_step(step);
+    }
+  }
+);
+
+
+watch(
+  currentVar,
+  (v) => {
+    mode.value = 1;
+    console.log(currentStep.value);
+  }
 );
 
 function on_request_pcb(var_id: VarId) {
@@ -176,11 +208,11 @@ function on_request_pcb(var_id: VarId) {
         variant = 0;
     }
 
-    let entry = uiState.value.variant_map.find(([n]) => n === n_gon);
+    let entry = design.value.variant_map.find(([n]) => n === n_gon);
 
     if (!entry) {
         entry = [n_gon, []];
-        uiState.value.variant_map.push(entry);
+        design.value.variant_map.push(entry);
     }
 
     const variants = entry[1];
@@ -198,7 +230,7 @@ function on_request_pcb(var_id: VarId) {
         <header>
             <button :disabled="mode === 0" @click="mode--">&lt;</button>
 
-            <template v-for="(step, i) in allSteps" :key="step">
+            <template v-for="(step, i) in allSteps">
                 <div>
                     <button
                         :class="{
@@ -217,12 +249,20 @@ function on_request_pcb(var_id: VarId) {
 
                     <select
                         v-if="step === 'SelectPoly' && mode === i"
-                        v-model="uiState.polyhedron"
+                        v-model="design.polyhedron"
                     >
                         <option v-for="name in polyhedra" :key="name">
                             {{ name }}
                         </option>
                     </select>
+                    <div
+                    class="variant-menu"
+                        v-else-if="typeof step === 'object' && 'AssignVariants' in step && mode === i"
+                    >
+                        <label v-for="(variant,i) in allVariants">
+                            <input type="checkbox" :value="i" v-model="currentVariant"> {{ variant }} </input>
+                        </label>
+                    </div>
                 </div>
             </template>
 
@@ -234,14 +274,14 @@ function on_request_pcb(var_id: VarId) {
             ref="canvas"
             tabindex="0"
             @keydown="iface.on_key"
-            @next_polyhedron="uiState.polyhedron = $event.detail"
+            @next_polyhedron="design.polyhedron = $event.detail"
             @request_pcb="
                 (e: CustomEventInit<VarId>) => {
                     on_request_pcb(e.detail!);
                 }
             "
             @design_changed="
-                (e: CustomEventInit<PcbDesign>) => (uiState = e.detail!)
+                (e: CustomEventInit<PcbDesign>) => (design = e.detail!)
             "
             @pointerdown="iface?.on_pointer_down"
             @pointermove="iface?.on_pointer_move"
@@ -268,7 +308,7 @@ function on_request_pcb(var_id: VarId) {
     height: 100%;
     z-index: 0;
     display: block;
-    touch-action: none;
+    touch-action: pinch-zoom;
 }
 
 button,
@@ -302,6 +342,24 @@ header {
 header select {
     width: 100%;
     min-width: 0;
+}
+
+
+.variant-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 0.5rem;
+}
+
+.variant-menu label {
+    padding: 0.25rem 0.5rem;
+    white-space: nowrap;
 }
 
 @media (max-width: 600px) {

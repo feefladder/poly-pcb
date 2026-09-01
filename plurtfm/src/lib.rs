@@ -52,11 +52,24 @@ pub struct VarId {
 ///
 /// This already exhausts the single-digit hexadecimal representation
 /// So development gets a "hard" limit lol
+#[derive(Tsify, Serialize)]
 pub enum VarFlags {
     Cut = 1,
     HalfLeds = 2,
     Controller = 4,
     Power = 8,
+}
+pub const VAR_FLAGS: [VarFlags; 4] = [
+    VarFlags::Cut,
+    VarFlags::HalfLeds,
+    VarFlags::Controller,
+    VarFlags::Power,
+];
+#[derive(Tsify, Serialize)]
+pub struct AllVarFlags(pub [VarFlags; VAR_FLAGS.len()]);
+#[wasm_bindgen]
+pub fn var_flags() -> Result<Ts<AllVarFlags>, JsError> {
+    Ok(AllVarFlags(VAR_FLAGS).into_ts()?)
 }
 
 impl VarFlags {
@@ -221,6 +234,11 @@ impl Interface {
         Ok(res)
     }
 
+    pub fn set_step(&mut self, step: Ts<CurrentStep>) -> Result<(), JsError> {
+        self.current_step = step.to_rust()?;
+        Ok(())
+    }
+
     pub fn render(&mut self) {
         // actually draw something?
         let screen = RenderTarget::screen(&self.context, self.canvas.width(), self.canvas.height());
@@ -283,13 +301,6 @@ impl Interface {
     pub fn set_polyhedron(&mut self, ts_design: Ts<LampDesign>) -> Result<Ts<SetResult>, JsError> {
         let design = ts_design.to_rust()?;
         // compare the given design to our current design
-        let maybe_corrected = self
-            .scene
-            .pcbdrons
-            .apply_design(design, &self.connection)
-            .map_err(|e| JsError::new(&e.to_string()))?;
-        // do the zooming thing
-        // still need to figure out what is a good distance multiplier
         let r = self
             .scene
             .pcbdrons
@@ -299,6 +310,15 @@ impl Interface {
             .expect("have poly")
             * 4.0;
         self.scene.camera.set_zoom_factor(1.0 / r);
+
+        let maybe_corrected = self
+            .scene
+            .pcbdrons
+            .apply_design(design, &self.connection)
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        // do the zooming thing
+        // still need to figure out what is a good distance multiplier
+
         // self.update_instances()?;
         // so
         self.render();

@@ -2,8 +2,8 @@
 //!
 //! anything responding to events, because it was growing too big
 
-use log::info;
-use serde::Serialize;
+use log::{debug, info};
+use serde::{Deserialize, Serialize};
 use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
 use tsify::{Ts, Tsify, declare};
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
@@ -11,17 +11,17 @@ use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEv
 
 use crate::{Interface, PcbId, VarFlags, VarId};
 
-#[derive(Tsify, Serialize, Debug, Clone, Copy)]
+#[derive(Tsify, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CurrentStep {
     SelectPoly,
-    AssignVariants,
+    AssignVariants(u8),
     MakePath,
 }
 
 pub const N_STEPS: usize = 3;
 pub const STEPS: [CurrentStep; N_STEPS] = [
     CurrentStep::SelectPoly,
-    CurrentStep::AssignVariants,
+    CurrentStep::AssignVariants(0),
     CurrentStep::MakePath,
 ];
 
@@ -102,9 +102,42 @@ impl Interface {
         if (event.buttons() & 1 == 0) && event.pointer_type() == "mouse" {
             return Ok(());
         } else {
-            // optionally do something here on click-drag
-            // like setting faces' colors to black for example
-            // for example, I'd say
+        }
+        // optionally do something here on click-drag
+        // like setting faces' colors to black for example
+        // for example, I'd say
+        if let CurrentStep::AssignVariants(var) = self.current_step
+            && let Some(face_id) = self.pick(&MouseEvent::from(event.clone()))
+        {
+            let variant = usize::from(var);
+            debug!("Setting face {face_id} to {variant:?}");
+            // paint the face with the current brush
+            let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
+            pcbdron.variant_map[face_id] = variant as usize;
+            let n_gon = pcbdron.polyhedron.faces[face_id].len();
+
+            let nth_ngon = pcbdron
+                .polyhedron
+                .iter_ngon(n_gon)
+                .position(|i| i == face_id)
+                .ok_or(JsError::new(&format!(
+                    "could not find position of {n_gon}-gon at face {face_id}"
+                )))?;
+            let e_detail = CustomEventInit::new();
+            e_detail.set_detail(
+                &VarId {
+                    nth_ngon,
+                    pcb_id: PcbId { n_gon, variant },
+                }
+                .into(),
+            );
+            self.canvas
+                .dispatch_event(
+                    &CustomEvent::new_with_event_init_dict("request_pcb", &e_detail).unwrap(),
+                )
+                .unwrap();
+            self.scene.pcbdrons.update_instances();
+            // need also update the design
         }
         let frac = 42.0 / self.scene.camera.position().magnitude();
         self.scene.camera.rotate_around(
@@ -118,7 +151,7 @@ impl Interface {
 
     pub fn on_pointer_up(&mut self, event: PointerEvent) -> Result<(), JsValue> {
         info!("pointer moved {event:?}");
-        if event.pointer_type() != "touch" {
+        if event.pointer_type() == "mouse" {
             self.canvas.release_pointer_capture(event.pointer_id())?
         }
         Ok(())
@@ -137,7 +170,7 @@ impl Interface {
         Ok(())
     }
 
-    pub fn on_click(&mut self, event: MouseEvent) -> Result<(), JsError> {
+    fn event_to_xy(&self, event: &MouseEvent) -> (f32, f32) {
         let rect = self.canvas.get_bounding_client_rect();
         // is f64 bc css pixels are fake, scale by canvas size to get back to physics the gpu understands
         let x =
@@ -145,26 +178,38 @@ impl Interface {
 
         let y = ((rect.bottom() - event.y() as f64) * self.canvas.height() as f64 / rect.height())
             as f32;
+        (x, y)
+    }
 
+    fn pick(&self, event: &MouseEvent) -> Option<usize> {
+        let (x, y) = self.event_to_xy(event);
         if let Some(p) = pick(
             &self.context,
             &self.scene.camera,
             (x, y),
             self.scene.pcbdrons.into_iter(),
             Cull::Back,
-        )? {
+        )
+        .ok()?
+        {
             info!(
                 "clicked on face with geometry id {}, instance id {}",
                 p.geometry_id, p.instance_id
             );
-            let face_id = self
-                .scene
-                .pcbdrons
-                .pick(p.geometry_id, p.instance_id)
-                .ok_or(JsError::new("could not locate clicked geometry"))?;
-            info!("which corresponds to face n. {face_id} on pcbdron 0");
+            self.scene.pcbdrons.pick(p.geometry_id, p.instance_id)
+        } else {
+            None
+        }
+    }
 
-            if event.ctrl_key() {
+    pub fn on_click(&mut self, event: MouseEvent) -> Result<(), JsError> {
+        let face_id = self
+            .pick(&event)
+            .ok_or(JsError::new("clicked on nothing"))?;
+        info!("which corresponds to face n. {face_id} on pcbdron 0");
+        match self.current_step {
+            CurrentStep::SelectPoly => {}
+            CurrentStep::MakePath => {
                 let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
                 info!("while holding ctrl");
                 for v in pcbdron.variant_map.iter_mut() {
@@ -187,20 +232,23 @@ impl Interface {
                     .map_err(|e| JsError::new(&e.to_string()))?;
                 self.scene.pcbdrons.update_debug_path();
                 self.render();
-            } else {
+            }
+            CurrentStep::AssignVariants(v) => {
                 let pcbdron = self.scene.pcbdrons.pcbdrons().nth(0).unwrap();
                 let n_gon = pcbdron.polyhedron.faces[face_id].len();
-                let current_variant = pcbdron.variant_map[face_id];
-                let variant = current_variant + 1;
+                let variant = if let CurrentStep::AssignVariants(v) = self.current_step {
+                    v as usize
+                } else {
+                    let current_variant = pcbdron.variant_map[face_id];
+                    current_variant + 1
+                };
+
                 // so js-side we keep per-ngon, so need find out which one this is
                 // just dispatch an event and let js update our state
                 let nth_ngon = pcbdron
                     .polyhedron
-                    .faces
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, v)| v.len() == n_gon)
-                    .position(|(i, _)| i == face_id)
+                    .iter_ngon(n_gon)
+                    .position(|i| i == face_id)
                     .ok_or(JsError::new(&format!(
                         "could not find position of {n_gon}-gon at face {face_id}"
                     )))?;

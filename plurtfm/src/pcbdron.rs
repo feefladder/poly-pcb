@@ -177,6 +177,8 @@ impl MultiPcbdron {
                     return None;
                 };
                 // now need find nth
+                // There is something bla going on here, where in case of multiple pcbdrons, we'd be chaining them together
+                // and because of that, the below is already kinda correct
                 return self.pcbdron.iter_variant(*pcb_id).nth(instance_id as usize);
             }
             id -= geometries.len();
