@@ -14,7 +14,7 @@ use crate::{Interface, PcbId, VarFlags, VarId};
 #[derive(Tsify, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CurrentStep {
     SelectPoly,
-    AssignVariants(u8),
+    AssignVariants(usize),
     MakePath,
 }
 
@@ -61,9 +61,7 @@ impl Interface {
                     .rotate_around(Vec3::zero(), 0.0, -std::f32::consts::FRAC_PI_8);
                 self.render();
             }
-            "Tab" | " " => {
-                self.next_polyhedron()?;
-            }
+            "Tab" | " " => {}
             k => info!("pressed {k:?}"),
         }
 
@@ -139,7 +137,11 @@ impl Interface {
             self.scene.pcbdrons.update_instances();
             // need also update the design
         }
-        let frac = 42.0 / self.scene.camera.position().magnitude();
+        let frac = if event.pointer_type() == "mouse" {
+            42.0
+        } else {
+            420.0
+        } / self.scene.camera.position().magnitude();
         self.scene.camera.rotate_around(
             Vec3::zero(),
             event.movement_x() as f32 / frac,
@@ -233,15 +235,9 @@ impl Interface {
                 self.scene.pcbdrons.update_debug_path();
                 self.render();
             }
-            CurrentStep::AssignVariants(v) => {
+            CurrentStep::AssignVariants(variant) => {
                 let pcbdron = self.scene.pcbdrons.pcbdrons().nth(0).unwrap();
                 let n_gon = pcbdron.polyhedron.faces[face_id].len();
-                let variant = if let CurrentStep::AssignVariants(v) = self.current_step {
-                    v as usize
-                } else {
-                    let current_variant = pcbdron.variant_map[face_id];
-                    current_variant + 1
-                };
 
                 // so js-side we keep per-ngon, so need find out which one this is
                 // just dispatch an event and let js update our state
