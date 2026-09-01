@@ -61,7 +61,15 @@ impl Interface {
                     .rotate_around(Vec3::zero(), 0.0, -std::f32::consts::FRAC_PI_8);
                 self.render();
             }
-            "Tab" | " " => {}
+            " " if self.current_step == CurrentStep::SelectPoly => {
+                self.next_polyhedron();
+            }
+            "Backspace" => match self.current_step {
+                CurrentStep::MakePath => {
+                    self.scene.pcbdrons.pop_path();
+                }
+                _ => {}
+            },
             k => info!("pressed {k:?}"),
         }
 
@@ -212,27 +220,27 @@ impl Interface {
         match self.current_step {
             CurrentStep::SelectPoly => {}
             CurrentStep::MakePath => {
-                let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
-                info!("while holding ctrl");
-                for v in pcbdron.variant_map.iter_mut() {
-                    VarFlags::Controller.rm(v);
-                }
-                pcbdron.variant_map[face_id] = 4;
-                pcbdron.polyhedron.find_path(face_id);
-                let design = pcbdron.get_design();
-                let e_detail = CustomEventInit::new();
-                e_detail.set_detail(&design.into_ts().unwrap().into());
-                self.canvas
-                    .dispatch_event(
-                        &CustomEvent::new_with_event_init_dict("design_changed", &e_detail)
-                            .unwrap(),
-                    )
-                    .unwrap();
-                self.scene
-                    .pcbdrons
-                    .update_instances()
-                    .map_err(|e| JsError::new(&e.to_string()))?;
-                self.scene.pcbdrons.update_debug_path();
+                self.scene.pcbdrons.add_face_to_path(face_id);
+                // let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
+                // for v in pcbdron.variant_map.iter_mut() {
+                //     VarFlags::Controller.rm(v);
+                // }
+                // pcbdron.variant_map[face_id] = 4;
+                // pcbdron.polyhedron.find_path(face_id);
+                // let design = pcbdron.get_design();
+                // let e_detail = CustomEventInit::new();
+                // e_detail.set_detail(&design.into_ts().unwrap().into());
+                // self.canvas
+                //     .dispatch_event(
+                //         &CustomEvent::new_with_event_init_dict("design_changed", &e_detail)
+                //             .unwrap(),
+                //     )
+                //     .unwrap();
+                // self.scene
+                //     .pcbdrons
+                //     .update_instances()
+                //     .map_err(|e| JsError::new(&e.to_string()))?;
+                // self.scene.pcbdrons.update_debug_path();
                 self.render();
             }
             CurrentStep::AssignVariants(variant) => {

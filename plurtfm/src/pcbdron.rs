@@ -381,6 +381,33 @@ impl MultiPcbdron {
         Ok(())
     }
 
+    pub fn complete_path(&mut self) {
+        self.pcbdron.polyhedron.complete_path();
+        self.update_instances();
+        self.update_debug_path();
+    }
+
+    pub fn add_face_to_path(&mut self, face_idx: usize) {
+        info!("adding face {face_idx}");
+        if let Some(fidx) = self.pcbdron.polyhedron.add_face_to_path(face_idx) {
+            for (i, v) in self.pcbdron.variant_map.iter_mut().enumerate() {
+                if i == fidx {
+                    *v = VarFlags::Controller.b0();
+                } else {
+                    VarFlags::Controller.rm(v);
+                }
+            }
+        }
+        self.update_instances();
+        self.update_debug_path();
+    }
+
+    pub fn pop_path(&mut self) {
+        self.pcbdron.polyhedron.edge_path.pop();
+        // self.update_instances();
+        self.update_debug_path();
+    }
+
     pub fn update_debug_path(&mut self) {
         // so here we basically want to have arrows that point in the right directions or something
         // maybe we can also do that with an instancedmodel of an arrow?
@@ -407,7 +434,25 @@ impl MultiPcbdron {
             },
         ) in hedron.edge_path.iter().enumerate()
         {
-            if i == 0 && VarFlags::Controller.has(self.pcbdron.variant_map[*face_idx]) {
+            if i == imax {
+                // let edge_n = hedron.edge_n_on_face(*face_idx, *enter).unwrap();
+                // let n_face_idx = hedron.other_face(*face_idx, edge_n);
+                // for the last, there is no crossing, so we add the enter arrow from the last one
+                // (this made more sense wrt. serializing a path)
+                // except it messes everything up in case we're manually making a path
+                // because in that case the exit edge is bs
+                // so...
+                // aah...
+                // ehh...
+                //
+                instances.transformations.push(from_to_transform(
+                    hedron.edge_centroid(*enter),
+                    hedron.face_centroid(*face_idx),
+                    hedron.face_normal(*face_idx),
+                ));
+                let c = colorous::MAGMA.eval_rational(i, imax.max(1));
+                colors.push(Srgba::new_opaque(c.r, c.g, c.b));
+            } else if i == 0 && VarFlags::Controller.has(self.pcbdron.variant_map[*face_idx]) {
                 // for the first, just give the output arrow
                 instances.transformations.push(from_to_transform(
                     hedron.face_centroid(*face_idx),
@@ -422,21 +467,8 @@ impl MultiPcbdron {
                     hedron.face_normal(*face_idx),
                 ));
             }
-            let c = colorous::MAGMA.eval_rational(i, imax);
+            let c = colorous::MAGMA.eval_rational(i, imax.max(1));
             colors.push(Srgba::new_opaque(c.r, c.g, c.b));
-            if i == imax {
-                let edge_n = hedron.edge_n_on_face(*face_idx, *exit).unwrap();
-                let n_face_idx = hedron.other_face(*face_idx, edge_n);
-                // for the last, there is no crossing, so we add the enter arrow from the last one
-                // (this made more sense wrt. serializing a path)
-                instances.transformations.push(from_to_transform(
-                    hedron.edge_centroid(*exit),
-                    hedron.face_centroid(n_face_idx),
-                    hedron.face_normal(n_face_idx),
-                ));
-                let c = colorous::MAGMA.eval_rational(i, imax);
-                colors.push(Srgba::new_opaque(c.r, c.g, c.b));
-            }
         }
         // build instances
         //         self.path_instances

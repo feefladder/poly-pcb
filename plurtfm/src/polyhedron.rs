@@ -525,14 +525,82 @@ impl Polyhedron {
         })
     }
 
+    pub fn add_face_to_path(&mut self, n_face_idx: usize) -> Option<usize> {
+        if self.edge_path.last().is_some() {
+            let fidx = self.edge_path.last().unwrap().face_idx;
+            let Ok(edge) = self.edge_from_two_faces(fidx, n_face_idx) else {
+                return None;
+            };
+            // so now we add the next face, so it's a crossing now
+            // except like this it would never like do anything
+            // So... let's say that for this moment we don't really do anything in some way?
+            // as in, the last
+            self.edge_path.last_mut().unwrap().exit = edge;
+            //
+            let rotate_amount = self.edge_n_on_face(n_face_idx, edge.rev()).unwrap();
+            self.faces[n_face_idx].rotate_left(rotate_amount);
+
+            self.edge_path.push(PolygonCrossing {
+                face_idx: n_face_idx,
+                enter: edge.rev(),
+                // designed to cause devastation if misused
+                exit: Edge {
+                    start: u32::MAX,
+                    end: u32::MAX,
+                },
+            });
+            None
+        } else {
+            let enter = self.edge_from_face(n_face_idx, 0);
+            self.edge_path.push(PolygonCrossing {
+                face_idx: n_face_idx,
+                enter,
+                // designed to cause devastation if misused
+                exit: Edge {
+                    start: u32::MAX,
+                    end: u32::MAX,
+                },
+            });
+            return Some(n_face_idx);
+        }
+    }
+
+    pub fn complete_path(&mut self) {
+        let mut face_path_index = vec![Vec::new(); self.faces.len()];
+        let mut visited = vec![false; self.faces.len()];
+        for (
+            i,
+            PolygonCrossing {
+                face_idx,
+                enter,
+                exit,
+            },
+        ) in self
+            .edge_path
+            .iter()
+            .enumerate()
+            // ignore the last entry so we can still go any direction from there
+            .take(self.edge_path.len().saturating_sub(1))
+        {
+            face_path_index[*face_idx].push(i);
+            visited[*face_idx] = true;
+        }
+        // so the last entry we're just taking the visit
+        let Some(v) = self.edge_path.pop() else {
+            return;
+        };
+
+        if self.dfs(&mut face_path_index, &mut visited, v.to_visit()) {
+            self.update_transforms();
+        }
+    }
+
     /// Find a path starting at the given face
     pub fn find_path(&mut self, start_face_idx: usize) -> Option<()> {
-        let mut path = Vec::with_capacity(self.faces.len() + 5);
         let mut visited = vec![false; self.faces.len()];
         let start_face = &self.faces[start_face_idx];
 
         if self.dfs(
-            &mut path,
             &mut (0..self.faces.len()).map(|_i| Vec::new()).collect(),
             &mut visited,
             PolygonVisit {
@@ -542,9 +610,11 @@ impl Polyhedron {
         ) {
             info!(
                 "found path {:?}",
-                path.iter().map(|pc| pc.face_idx).collect::<Vec<_>>()
+                self.edge_path
+                    .iter()
+                    .map(|pc| pc.face_idx)
+                    .collect::<Vec<_>>()
             );
-            self.edge_path = path;
 
             // update face transforms
             self.update_transforms();
@@ -624,7 +694,6 @@ impl Polyhedron {
     /// path is a path as found on self, and face_path_index is an index of where in the path a given face can be found
     fn dfs(
         &mut self,
-        path: &mut Path,
         face_path_index: &mut Vec<Vec<usize>>,
         visited: &mut Vec<bool>,
         visit: PolygonVisit,
@@ -651,7 +720,10 @@ impl Polyhedron {
         let fidx = visit.face_idx;
 
         if visited[fidx] {
-            error!("should call revisit_dfs when revisiting {path:?}");
+            error!(
+                "should call revisit_dfs when revisiting {:?}",
+                self.edge_path
+            );
             return false;
         }
         // rotate poly so we're entering on edge 0-1
@@ -724,7 +796,7 @@ impl Polyhedron {
                 //
                 // but also,
                 if !face_path_index[n_face_idx].iter().any(|&i| {
-                    let cr = path[i];
+                    let cr = self.edge_path[i];
                     (self.edge_n_on_face(n_face_idx, cr.enter).unwrap() < i
                         && self.edge_n_on_face(n_face_idx, cr.exit).unwrap() > i)
                         || cr.enter == edge.rev()
@@ -739,10 +811,9 @@ impl Polyhedron {
                     ));
                 }
             } else {
-                face_path_index[fidx].push(path.len());
-                path.push(visit.exit(*edge));
+                face_path_index[fidx].push(self.edge_path.len());
+                self.edge_path.push(visit.exit(*edge));
                 if self.dfs(
-                    path,
                     face_path_index,
                     visited,
                     PolygonVisit {
@@ -753,7 +824,7 @@ impl Polyhedron {
                     return true;
                 } else {
                     face_path_index[fidx].pop();
-                    path.pop();
+                    self.edge_path.pop();
                 }
                 // we want to closely hug visited pcbs, so break before diverging
                 // this greatly speeds up search time, but kinda sad
@@ -764,8 +835,8 @@ impl Polyhedron {
             }
         }
         for revisit in revisits {
-            face_path_index[revisit.0.face_idx].push(path.len());
-            path.push(revisit.0);
+            face_path_index[revisit.0.face_idx].push(self.edge_path.len());
+            self.edge_path.push(revisit.0);
             // debug!(
             //     "revisiting face {:?} which has been visited by {:?}",
             //     revisit.1,
@@ -775,11 +846,11 @@ impl Polyhedron {
             //         .collect::<Vec<_>>()
             // );
             // So here it'd be better to do some alternative "I'm revisiting a face!"-type dfs
-            if self.revisit_dfs(path, face_path_index, visited, revisit.1) {
+            if self.revisit_dfs(face_path_index, visited, revisit.1) {
                 return true;
             } else {
                 face_path_index[revisit.0.face_idx].pop();
-                path.pop();
+                self.edge_path.pop();
             }
         }
 
@@ -790,7 +861,6 @@ impl Polyhedron {
 
     fn revisit_dfs(
         &mut self,
-        path: &mut Path,
         face_path_index: &mut Vec<Vec<usize>>,
         visited: &mut Vec<bool>,
         visit: PolygonVisit,
@@ -817,7 +887,7 @@ impl Polyhedron {
         let largest_smaller_n = face_path_index[fidx]
             .iter()
             .filter_map(|&v| {
-                let cr = path[v];
+                let cr = self.edge_path[v];
                 let e = self.edge_n_on_face(fidx, cr.exit).unwrap();
                 if e < n { Some(e) } else { None }
             })
@@ -844,7 +914,7 @@ impl Polyhedron {
         let smallest_larger_n = face_path_index[fidx]
             .iter()
             .filter_map(|&v| {
-                let cr = path[v];
+                let cr = self.edge_path[v];
                 let e = self.edge_n_on_face(fidx, cr.exit).unwrap();
                 if e > n { Some(e) } else { None }
             })
@@ -854,10 +924,9 @@ impl Polyhedron {
             let e = self.edge_from_face(fidx, edge_n);
             let n_face_idx = self.other_face(fidx, edge_n);
             if face_path_index[n_face_idx].is_empty() {
-                face_path_index[fidx].push(path.len());
-                path.push(visit.exit(e));
+                face_path_index[fidx].push(self.edge_path.len());
+                self.edge_path.push(visit.exit(e));
                 if self.dfs(
-                    path,
                     face_path_index,
                     visited,
                     PolygonVisit {
@@ -867,7 +936,7 @@ impl Polyhedron {
                 ) {
                     return true;
                 } else {
-                    path.pop();
+                    self.edge_path.pop();
                     face_path_index[fidx].pop();
                 }
             } else {
@@ -911,6 +980,15 @@ pub struct PolygonCrossing {
     pub face_idx: usize,
     pub enter: Edge,
     pub exit: Edge,
+}
+
+impl PolygonCrossing {
+    pub fn to_visit(self) -> PolygonVisit {
+        PolygonVisit {
+            face_idx: self.face_idx,
+            enter: self.enter,
+        }
+    }
 }
 
 #[cfg(test)]

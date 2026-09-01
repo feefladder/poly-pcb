@@ -301,6 +301,7 @@ impl Interface {
     pub fn set_polyhedron(&mut self, ts_design: Ts<LampDesign>) -> Result<Ts<SetResult>, JsError> {
         let design = ts_design.to_rust()?;
         // compare the given design to our current design
+
         let r = self
             .scene
             .pcbdrons
@@ -421,6 +422,10 @@ impl Interface {
         // self.update_instances()
         self.render();
         Ok(())
+    }
+
+    pub fn complete_path(&mut self) {
+        self.scene.pcbdrons.complete_path();
     }
 }
 

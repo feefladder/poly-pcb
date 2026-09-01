@@ -29,7 +29,7 @@ const mode = ref<number>(0);
 const design = ref<PcbDesign>({
     polyhedron: "tetrahedron",
     variant_map: [[3, [4, 0, 1, 2]]],
-    path: { start_ngon: 3, start_nth: 0, turns: [0, 0, 1, 1] },
+    path: { start_ngon: 3, start_nth: 0, turns: [] },
 });
 let iface: Interface;
 const allSteps: Ref<CurrentStep[]> = ref([]);
@@ -263,6 +263,7 @@ function on_request_pcb(var_id: VarId) {
                             <input type="checkbox" :value="i" v-model="currentVariant"> {{ variant }} </input>
                         </label>
                     </div>
+                    <button v-else-if="step === 'MakePath' && mode === i" @click="iface.complete_path()" >Find path</button>
                 </div>
             </template>
 
