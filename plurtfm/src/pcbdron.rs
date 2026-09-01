@@ -412,13 +412,6 @@ impl MultiPcbdron {
                     hedron.edge_centroid(*exit),
                     hedron.face_normal(*face_idx),
                 ));
-            } else if i == imax {
-                // for the last, just give the enter arrow
-                instances.transformations.push(from_to_transform(
-                    hedron.edge_centroid(*enter),
-                    hedron.face_centroid(*face_idx),
-                    hedron.face_normal(*face_idx),
-                ));
             } else {
                 // point from edge to edge
                 instances.transformations.push(from_to_transform(
@@ -429,6 +422,19 @@ impl MultiPcbdron {
             }
             let c = colorous::MAGMA.eval_rational(i, imax);
             colors.push(Srgba::new_opaque(c.r, c.g, c.b));
+            if i == imax {
+                let edge_n = hedron.edge_n_on_face(*face_idx, *exit).unwrap();
+                let n_face_idx = hedron.other_face(*face_idx, edge_n);
+                // for the last, there is no crossing, so we add the enter arrow from the last one
+                // (this made more sense wrt. serializing a path)
+                instances.transformations.push(from_to_transform(
+                    hedron.edge_centroid(*exit),
+                    hedron.face_centroid(n_face_idx),
+                    hedron.face_normal(n_face_idx),
+                ));
+                let c = colorous::MAGMA.eval_rational(i, imax);
+                colors.push(Srgba::new_opaque(c.r, c.g, c.b));
+            }
         }
         // build instances
         //         self.path_instances

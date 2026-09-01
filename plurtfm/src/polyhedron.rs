@@ -590,13 +590,13 @@ impl Polyhedron {
     }
 
     /// get n of an edgeedge_from_two_faces
-    fn edge_n_on_face(&self, face_idx: usize, edge: Edge) -> Option<usize> {
+    pub fn edge_n_on_face(&self, face_idx: usize, edge: Edge) -> Option<usize> {
         self.face_edges(face_idx, 0).position(|e| e == edge)
     }
 
     /// Get the face on the other side of the nth edge
     #[inline]
-    fn other_face(&self, my_face: usize, flip_edge: usize) -> usize {
+    pub fn other_face(&self, my_face: usize, flip_edge: usize) -> usize {
         let edge = self.edge_from_face(my_face, flip_edge).rev();
 
         let faces = self.edges[&edge.sorted()].faces;
@@ -648,28 +648,30 @@ impl Polyhedron {
         //
         // anyways, let's add a poly.edge(face_idx, id) or something?
         // it almost feels like having some silly type that is Face(Vec<u32>) just to be able to nicen the zip(skip) iterator hell?
-        assert!(
-            !visited[visit.face_idx],
-            "should call revisit_dfs when revisiting {path:?}"
-        );
+        let fidx = visit.face_idx;
+
+        if visited[fidx] {
+            error!("should call revisit_dfs when revisiting {path:?}");
+            return false;
+        }
         // rotate poly so we're entering on edge 0-1
-        visited[visit.face_idx] = true;
-        let rotate_amount = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
-        self.faces[visit.face_idx].rotate_left(rotate_amount);
+        visited[fidx] = true;
+        let rotate_amount = self.edge_n_on_face(fidx, visit.enter).unwrap();
+        self.faces[fidx].rotate_left(rotate_amount);
         // success condition: all faces visited (this can only happen on first visit)
         if visited.iter().all(|v| *v) {
             // add current visit
             // exit is first possible exit
-            path.push(visit.exit(self.edge_from_face(visit.face_idx, 1)));
+            // path.push(visit.exit(self.edge_from_face(fidx, 1)));
             return true;
         }
 
         // current face
-        // let face = &self.faces[visit.face_idx];
+        // let face = &self.faces[fidx];
         // for dfs we want to go left first, then cycle around the polygon.
         //
         // Also if we're revisiting the polygon, then only check next n edges
-        let face_edges = self.face_edges(visit.face_idx, 0).collect::<Vec<_>>();
+        let face_edges = self.face_edges(fidx, 0).collect::<Vec<_>>();
         let mut revisits = Vec::new();
         let mut n_new_faces = 0;
         // skip entering edge and only test two??
@@ -678,16 +680,16 @@ impl Polyhedron {
             // check if we're visiting an already-crossed polygon
             //
             // here we check for all polyhedron faces if it contains this edge, which is kinda inefficient
-            let n_face_idx = self.other_face(visit.face_idx, i);
+            let n_face_idx = self.other_face(fidx, i);
 
             // what's this again?
             // something like checking if it's already entered earlier
-            if face_path_index[n_face_idx]
-                .iter()
-                .any(|&crossing_idx| path[crossing_idx].enter == edge.rev())
-            {
-                continue;
-            }
+            // if face_path_index[n_face_idx]
+            //     .iter()
+            //     .any(|&crossing_idx| path[crossing_idx].enter == edge.rev())
+            // {
+            //     continue;
+            // }
             // If this face has already been visited, check the crossing rule: 0-2 1-3 is not allowed
             //
             // wait... on hexagon, 01  45  23 is allowed actually and below would disregard that
@@ -737,7 +739,7 @@ impl Polyhedron {
                     ));
                 }
             } else {
-                face_path_index[visit.face_idx].push(path.len());
+                face_path_index[fidx].push(path.len());
                 path.push(visit.exit(*edge));
                 if self.dfs(
                     path,
@@ -749,6 +751,9 @@ impl Polyhedron {
                     },
                 ) {
                     return true;
+                } else {
+                    face_path_index[fidx].pop();
+                    path.pop();
                 }
                 // we want to closely hug visited pcbs, so break before diverging
                 // this greatly speeds up search time, but kinda sad
@@ -778,12 +783,8 @@ impl Polyhedron {
             }
         }
 
-        if let Some(v) = path.pop() {
-            face_path_index[v.face_idx].pop();
-        }
-
         // we were the ones visiting
-        visited[visit.face_idx] = false;
+        visited[fidx] = false;
         false
     }
 
