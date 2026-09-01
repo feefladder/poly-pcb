@@ -404,7 +404,6 @@ impl MultiPcbdron {
 
     pub fn pop_path(&mut self) {
         self.pcbdron.polyhedron.edge_path.pop();
-        // self.update_instances();
         self.update_debug_path();
     }
 

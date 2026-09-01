@@ -263,7 +263,10 @@ function on_request_pcb(var_id: VarId) {
                             <input type="checkbox" :value="i" v-model="currentVariant"> {{ variant }} </input>
                         </label>
                     </div>
-                    <button v-else-if="step === 'MakePath' && mode === i" @click="iface.complete_path()" >Find path</button>
+                    <div class="path-menu" v-else-if="step === 'MakePath' && mode === i">
+                    <button  @click="iface.complete_path()" >Find path</button>
+                    <button @click="iface.pop_path()">Back</button>
+                    </div>
                 </div>
             </template>
 

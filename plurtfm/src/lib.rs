@@ -426,6 +426,12 @@ impl Interface {
 
     pub fn complete_path(&mut self) {
         self.scene.pcbdrons.complete_path();
+        self.render();
+    }
+
+    pub fn pop_path(&mut self) {
+        self.scene.pcbdrons.pop_path();
+        self.render();
     }
 }
 

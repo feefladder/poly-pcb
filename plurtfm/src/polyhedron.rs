@@ -733,13 +733,11 @@ impl Polyhedron {
         // success condition: all faces visited (this can only happen on first visit)
         if visited.iter().all(|v| *v) {
             // add current visit
-            // exit is first possible exit
-            // path.push(visit.exit(self.edge_from_face(fidx, 1)));
+            // exit is devastating if misused
+            self.edge_path.push(visit.exit((u32::MAX, u32::MAX).into()));
             return true;
         }
 
-        // current face
-        // let face = &self.faces[fidx];
         // for dfs we want to go left first, then cycle around the polygon.
         //
         // Also if we're revisiting the polygon, then only check next n edges
@@ -754,14 +752,6 @@ impl Polyhedron {
             // here we check for all polyhedron faces if it contains this edge, which is kinda inefficient
             let n_face_idx = self.other_face(fidx, i);
 
-            // what's this again?
-            // something like checking if it's already entered earlier
-            // if face_path_index[n_face_idx]
-            //     .iter()
-            //     .any(|&crossing_idx| path[crossing_idx].enter == edge.rev())
-            // {
-            //     continue;
-            // }
             // If this face has already been visited, check the crossing rule: 0-2 1-3 is not allowed
             //
             // wait... on hexagon, 01  45  23 is allowed actually and below would disregard that
@@ -791,10 +781,10 @@ impl Polyhedron {
                 // Since we rotate on first visit, this is correct
 
                 // crossing rule:
-                // 02 disallows 13
-                // e.g. 0 enter and 2 exit disallows 1 as enter
-                //
-                // but also,
+                // 03 disallows 0,1,2,3
+                // 0 because it's enter
+                // 1,2 because it's sandwiched
+                // 3 because it's exit
                 if !face_path_index[n_face_idx].iter().any(|&i| {
                     let cr = self.edge_path[i];
                     (self.edge_n_on_face(n_face_idx, cr.enter).unwrap() < i

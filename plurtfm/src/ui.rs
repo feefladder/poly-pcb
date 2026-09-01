@@ -66,7 +66,13 @@ impl Interface {
             }
             "Backspace" => match self.current_step {
                 CurrentStep::MakePath => {
-                    self.scene.pcbdrons.pop_path();
+                    self.pop_path();
+                }
+                _ => {}
+            },
+            "Enter" => match self.current_step {
+                CurrentStep::MakePath => {
+                    self.complete_path();
                 }
                 _ => {}
             },
