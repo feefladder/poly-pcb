@@ -3,18 +3,34 @@
 //! anything responding to events, because it was growing too big
 
 use log::info;
+use serde::Serialize;
 use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
-use tsify::Tsify;
+use tsify::{Ts, Tsify, declare};
 use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
 use crate::{Interface, PcbId, VarFlags, VarId};
 
-#[wasm_bindgen]
+#[derive(Tsify, Serialize, Debug, Clone, Copy)]
 pub enum CurrentStep {
     SelectPoly,
     AssignVariants,
     MakePath,
+}
+
+pub const N_STEPS: usize = 3;
+pub const STEPS: [CurrentStep; N_STEPS] = [
+    CurrentStep::SelectPoly,
+    CurrentStep::AssignVariants,
+    CurrentStep::MakePath,
+];
+
+#[derive(Tsify, Serialize)]
+pub struct Steps(pub [CurrentStep; N_STEPS]);
+
+#[wasm_bindgen]
+pub fn steps() -> Result<Ts<Steps>, JsError> {
+    Ok(Steps(STEPS).into_ts()?)
 }
 
 #[wasm_bindgen]
@@ -83,7 +99,7 @@ impl Interface {
 
     pub fn on_pointer_move(&mut self, event: PointerEvent) -> Result<(), JsError> {
         // Only rotate while the primary button is held.
-        if (event.buttons() & 1 == 0) && event.pointer_type() != "touch" {
+        if (event.buttons() & 1 == 0) && event.pointer_type() == "mouse" {
             return Ok(());
         } else {
             // optionally do something here on click-drag

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, type Ref } from "vue";
 import {
-    CurrentStep,
+    type CurrentStep,
     Interface,
     PcbId,
     VarId,
     type PcbDesign,
+    type Steps,
 } from "./pkg/poly_pcb.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
@@ -23,17 +24,14 @@ type Path = number[];
 const polyhedra: Ref<string[]> = ref([]);
 const pcbLoader = ref<PcbLoader | null>(null);
 const canvas = ref();
-const mode = ref<CurrentStep>(CurrentStep.SelectPoly);
+const mode = ref<number>(0);
 const uiState = ref<PcbDesign>({
     polyhedron: "tetrahedron",
     variant_map: [[3, [4, 0, 1, 2]]],
     path: { start_ngon: 3, start_nth: 0, turns: [0, 0, 1, 1] },
 });
-
-const steps = Object.values(CurrentStep).filter(
-    (step): step is CurrentStep => typeof step === "number",
-);
 let iface: Interface;
+const allSteps: Ref<CurrentStep[]> = ref([]);
 
 window.addEventListener("hashchange", () => {
     apply_url();
@@ -126,6 +124,8 @@ onMounted(async () => {
 
     await wasm.default();
     let db = await loadAsset("polydb.sqlite3");
+    allSteps.value = wasm.steps();
+    console.log(allSteps);
     iface = wasm.init_iface(canvas.value!, db!);
     pcbLoader.value = new PcbLoader(iface);
 
@@ -196,22 +196,27 @@ function on_request_pcb(var_id: VarId) {
 <template>
     <div class="canvas-container">
         <header>
-            <button :disabled="mode === steps[0]" @click="mode--">&lt;</button>
+            <button :disabled="mode === 0" @click="mode--">&lt;</button>
 
-            <template v-for="(step, i) in steps" :key="step">
+            <template v-for="(step, i) in allSteps" :key="step">
                 <div>
                     <button
-                        :disabled="step < mode"
-                        :style="{
-                            fontWeight: step === mode ? 'bold' : 'normal',
+                        :class="{
+                            current: i === mode,
+                            previous: i < mode,
+                            next: i > mode,
                         }"
-                        @click="mode = step"
+                        :disabled="i < mode"
+                        :style="{
+                            fontWeight: i === mode ? 'bold' : 'normal',
+                        }"
+                        @click="mode = i"
                     >
-                        {{ i + 1 }}. {{ CurrentStep[step] }}
+                        {{ i + 1 }}. {{ allSteps[i] }}
                     </button>
 
                     <select
-                        v-if="step === CurrentStep.SelectPoly && mode === step"
+                        v-if="step === 'SelectPoly' && mode === i"
                         v-model="uiState.polyhedron"
                     >
                         <option v-for="name in polyhedra" :key="name">
@@ -219,14 +224,9 @@ function on_request_pcb(var_id: VarId) {
                         </option>
                     </select>
                 </div>
-
-                <span v-if="i < steps.length - 1">────</span>
             </template>
 
-            <button
-                :disabled="mode === steps[steps.length - 1]"
-                @click="mode++"
-            >
+            <button :disabled="mode === allSteps?.length - 1" @click="mode++">
                 &gt;
             </button>
         </header>
@@ -268,6 +268,7 @@ function on_request_pcb(var_id: VarId) {
     height: 100%;
     z-index: 0;
     display: block;
+    touch-action: none;
 }
 
 button,
@@ -275,7 +276,7 @@ select {
     padding: 0.5rem 1rem;
     background: #2ec27e;
     border-radius: 1rem;
-    border: 1px solid #26a269;
+    border: 2px solid #26a269;
 }
 
 select option {
@@ -289,11 +290,28 @@ header {
     z-index: 100;
     display: flex;
     align-items: center;
-    justify-content: center;
+    /*justify-content: center;*/
+    justify-content: space-between;
     gap: 1rem;
     padding: 1rem;
 
     backdrop-filter: blur(8px);
     pointer-events: all;
+}
+
+header select {
+    width: 100%;
+    min-width: 0;
+}
+
+@media (max-width: 600px) {
+    .step:not(.current) {
+        display: none;
+    }
+
+    header .previous,
+    header .next {
+        display: none;
+    }
 }
 </style>

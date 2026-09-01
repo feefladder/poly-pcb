@@ -2,16 +2,21 @@ use std::sync::Arc;
 
 #[cfg(target_arch = "wasm32")]
 use crate::design::{LampDesign, PcbDesign, Wrap};
-use crate::{design::VariantMap, pcbdron::MultiPcbdron, polyhedron::Polyhedron};
+use crate::{
+    design::VariantMap,
+    pcbdron::MultiPcbdron,
+    polyhedron::Polyhedron,
+    ui::{CurrentStep, STEPS},
+};
 use log::info;
 use rusqlite::Connection;
 use serde::Serialize;
-#[cfg(target_arch = "wasm32")]
-use three_d::prelude::*;
 use three_d::{
     AmbientLight, Attenuation, Camera, ClearState, Context, CpuGeometry, CpuModel, Light,
     PointLight, RenderTarget, Viewport,
 };
+#[cfg(target_arch = "wasm32")]
+use three_d::{context::RGB10_A2, prelude::*};
 #[cfg(target_arch = "wasm32")]
 use tsify::Tsify;
 use tsify::{Ts, declare};
@@ -101,6 +106,7 @@ pub struct Interface {
     /// maximum is 10-gon, want nice indexing: face_meshes[3] = triangles
     /// I don't care about unused first 3 units and 7 and 9
     pcbs: [Vec<Option<CpuModel>>; 11],
+    current_step: CurrentStep,
 }
 
 /// The scene is well, the scene
@@ -187,6 +193,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         context,
         // https://stackoverflow.com/a/54134142/14681457
         pcbs: Default::default(),
+        current_step: STEPS[0],
     };
 
     Ok(iface)
@@ -281,6 +288,17 @@ impl Interface {
             .pcbdrons
             .apply_design(design, &self.connection)
             .map_err(|e| JsError::new(&e.to_string()))?;
+        // do the zooming thing
+        // still need to figure out what is a good distance multiplier
+        let r = self
+            .scene
+            .pcbdrons
+            .pcbdrons()
+            .map(|p| p.polyhedron.mean_r())
+            .max_by(|a, b| a.total_cmp(b))
+            .expect("have poly")
+            * 4.0;
+        self.scene.camera.set_zoom_factor(1.0 / r);
         // self.update_instances()?;
         // so
         self.render();

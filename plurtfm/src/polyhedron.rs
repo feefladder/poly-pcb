@@ -369,6 +369,15 @@ impl Polyhedron {
         }
     }
 
+    pub fn mean_r(&self) -> f32 {
+        let centroid = self.vertices.iter().sum::<Vec3>() / self.vertices.len() as f32;
+        self.vertices
+            .iter()
+            .map(|v| (v - centroid).magnitude())
+            .sum::<f32>()
+            / self.vertices.len() as f32
+    }
+
     /// Create a sphere with average radius of the polyhedron
     pub fn sphere(
         &self,
@@ -463,8 +472,8 @@ impl Polyhedron {
             }
         }
         let n_enter = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
-        self.edge_path
-            .push(visit.exit(self.edge_from_face(visit.face_idx, n_enter + 1)));
+        // self.edge_path
+        //     .push(visit.exit(self.edge_from_face(visit.face_idx, n_enter + 1)));
         self.update_transforms();
         Ok(())
     }
@@ -491,7 +500,11 @@ impl Polyhedron {
         {
             if *enter == self.edge_from_face(*face_idx, 0) {
                 // first time visiting
-                turns.push(self.edge_n_on_face(*face_idx, *exit).unwrap() - 1);
+                turns.push(
+                    self.edge_n_on_face(*face_idx, *exit)
+                        .unwrap()
+                        .saturating_sub(1),
+                );
             } else {
                 let n_enter = self.edge_n_on_face(*face_idx, *enter).unwrap();
                 let n_exit = self.edge_n_on_face(*face_idx, *exit).unwrap();
@@ -759,6 +772,9 @@ impl Polyhedron {
             // So here it'd be better to do some alternative "I'm revisiting a face!"-type dfs
             if self.revisit_dfs(path, face_path_index, visited, revisit.1) {
                 return true;
+            } else {
+                face_path_index[revisit.0.face_idx].pop();
+                path.pop();
             }
         }
 
@@ -766,10 +782,8 @@ impl Polyhedron {
             face_path_index[v.face_idx].pop();
         }
 
-        // if we've rotated the face, we were the ones visiting
-        if self.faces[visit.face_idx][0] == visit.enter.start {
-            visited[visit.face_idx] = false;
-        }
+        // we were the ones visiting
+        visited[visit.face_idx] = false;
         false
     }
 
@@ -796,14 +810,14 @@ impl Polyhedron {
         // So... 5 is actually forcing a spiral,
         // but 4 would be forcing a spiral the other way around
         // so it's all a bit suboptimal to be entering on 3
-
-        let n = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
-        debug!("revisiting face {:?} from edge {n}", visit.face_idx);
-        let largest_smaller_n = face_path_index[visit.face_idx]
+        let fidx = visit.face_idx;
+        let n = self.edge_n_on_face(fidx, visit.enter).unwrap();
+        debug!("revisiting face {:?} from edge {n}", fidx);
+        let largest_smaller_n = face_path_index[fidx]
             .iter()
             .filter_map(|&v| {
                 let cr = path[v];
-                let e = self.edge_n_on_face(visit.face_idx, cr.exit).unwrap();
+                let e = self.edge_n_on_face(fidx, cr.exit).unwrap();
                 if e < n { Some(e) } else { None }
             })
             .max()
@@ -811,14 +825,14 @@ impl Polyhedron {
         // else {
         //     error!(
         //         "Could not find largest smaller n for {:?}, {:?}",
-        //         self.edge_n_on_face(visit.face_idx, visit.enter),
-        //         face_path_index[visit.face_idx]
+        //         self.edge_n_on_face(fidx, visit.enter),
+        //         face_path_index[fidx]
         //             .iter()
         //             .map(|&v| {
         //                 let c = path[v];
         //                 (
-        //                     // self.edge_n_on_face(visit.face_idx, c.enter),
-        //                     self.edge_n_on_face(visit.face_idx, c.exit),
+        //                     // self.edge_n_on_face(fidx, c.enter),
+        //                     self.edge_n_on_face(fidx, c.exit),
         //                 )
         //             })
         //             .collect::<Vec<_>>()
@@ -826,20 +840,20 @@ impl Polyhedron {
         //     return false;
         // };
         // If there's no larger n, we'll try till the end of the face
-        let smallest_larger_n = face_path_index[visit.face_idx]
+        let smallest_larger_n = face_path_index[fidx]
             .iter()
             .filter_map(|&v| {
                 let cr = path[v];
-                let e = self.edge_n_on_face(visit.face_idx, cr.exit).unwrap();
+                let e = self.edge_n_on_face(fidx, cr.exit).unwrap();
                 if e > n { Some(e) } else { None }
             })
             .min()
-            .unwrap_or(self.faces[visit.face_idx].len());
+            .unwrap_or(self.faces[fidx].len());
         for edge_n in (largest_smaller_n..n).chain(n + 1..smallest_larger_n) {
-            let e = self.edge_from_face(visit.face_idx, edge_n);
-            let n_face_idx = self.other_face(visit.face_idx, edge_n);
+            let e = self.edge_from_face(fidx, edge_n);
+            let n_face_idx = self.other_face(fidx, edge_n);
             if face_path_index[n_face_idx].is_empty() {
-                face_path_index[visit.face_idx].push(path.len());
+                face_path_index[fidx].push(path.len());
                 path.push(visit.exit(e));
                 if self.dfs(
                     path,
@@ -851,20 +865,21 @@ impl Polyhedron {
                     },
                 ) {
                     return true;
+                } else {
+                    path.pop();
+                    face_path_index[fidx].pop();
                 }
             } else {
                 // revisiting from a revisit, that's sad
                 // so just give up?
-                if let Some(v) = path.pop() {
-                    face_path_index[v.face_idx].pop();
-                }
-                return false;
+
+                // if let Some(v) = path.pop() {
+                //     face_path_index[v.face_idx].pop();
+                // }
+                // return false;
             }
         }
         // it could be that above for loop didn't run, so that's also a fail
-        // if let Some(v) = path.pop() {
-        //     face_path_index[v.face_idx].pop();
-        // }
         false
     }
 }
