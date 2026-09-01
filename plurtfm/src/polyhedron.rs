@@ -536,9 +536,15 @@ impl Polyhedron {
             // So... let's say that for this moment we don't really do anything in some way?
             // as in, the last
             self.edge_path.last_mut().unwrap().exit = edge;
-            //
-            let rotate_amount = self.edge_n_on_face(n_face_idx, edge.rev()).unwrap();
-            self.faces[n_face_idx].rotate_left(rotate_amount);
+            if self
+                .edge_path
+                .iter()
+                .find(|cr| cr.face_idx == n_face_idx)
+                .is_none()
+            {
+                let rotate_amount = self.edge_n_on_face(n_face_idx, edge.rev()).unwrap();
+                self.faces[n_face_idx].rotate_left(rotate_amount);
+            }
 
             self.edge_path.push(PolygonCrossing {
                 face_idx: n_face_idx,
@@ -549,6 +555,8 @@ impl Polyhedron {
                     end: u32::MAX,
                 },
             });
+
+            self.update_transforms();
             None
         } else {
             let enter = self.edge_from_face(n_face_idx, 0);
@@ -561,7 +569,7 @@ impl Polyhedron {
                     end: u32::MAX,
                 },
             });
-            return Some(n_face_idx);
+            Some(n_face_idx)
         }
     }
 
