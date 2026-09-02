@@ -506,12 +506,12 @@ impl Polyhedron {
                 // first time visiting
                 turns.push(
                     self.edge_n_on_face(*face_idx, *exit)
-                        .unwrap()
+                        .unwrap_or(0)
                         .saturating_sub(1),
                 );
             } else {
                 let n_enter = self.edge_n_on_face(*face_idx, *enter).unwrap();
-                let n_exit = self.edge_n_on_face(*face_idx, *exit).unwrap();
+                let n_exit = self.edge_n_on_face(*face_idx, *exit).unwrap_or(n_enter);
                 let Some(turn) = n_enter.checked_sub(n_exit) else {
                     return Some(Err(PcbPath {
                         start_ngon,

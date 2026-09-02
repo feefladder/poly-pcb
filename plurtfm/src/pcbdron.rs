@@ -76,17 +76,20 @@ impl Pcbdron {
             }
         }
 
-        let path = self
-            .polyhedron
-            .current_path()
-            .transpose()
-            .unwrap_or_else(|p| Some(p));
+        let path = self.current_path();
         debug!("current path: {path:?}");
         PcbDesign {
             polyhedron,
             variant_map,
             path,
         }
+    }
+
+    pub fn current_path(&self) -> Option<PcbPath> {
+        self.polyhedron
+            .current_path()
+            .transpose()
+            .unwrap_or_else(|p| Some(p))
     }
 
     /// Set the polyhedron with the given variant map
@@ -409,12 +412,28 @@ impl MultiPcbdron {
         self.update_debug_path();
     }
 
-    pub fn add_face_to_path(&mut self, face_idx: usize) {
+    pub fn add_face_to_path(&mut self, face_idx: usize) -> Option<VarId> {
         info!("adding face {face_idx}");
+        let mut res = None;
         if let Some(fidx) = self.pcbdron.polyhedron.add_face_to_path(face_idx) {
             for (i, v) in self.pcbdron.variant_map.iter_mut().enumerate() {
                 if i == fidx {
-                    *v = VarFlags::Controller.b0();
+                    let variant = VarFlags::Controller.b0();
+                    *v = variant;
+                    let n_gon = self.pcbdron.polyhedron.faces[i].len();
+                    let pcb_id = PcbId { n_gon, variant };
+                    let nth_ngon = self
+                        .pcbdron
+                        .polyhedron
+                        .iter_ngon(n_gon)
+                        .position(|f| f == fidx)
+                        .unwrap();
+                    res = Some(VarId {
+                        nth_ngon,
+                        pcb_id,
+                        // actually we don't know at this point
+                        need_fetch: false,
+                    });
                 } else {
                     VarFlags::Controller.rm(v);
                 }
@@ -422,6 +441,7 @@ impl MultiPcbdron {
         }
         self.update_instances();
         self.update_debug_path();
+        res
     }
 
     pub fn pop_path(&mut self) {
@@ -458,6 +478,10 @@ impl MultiPcbdron {
         self.update_instances();
         self.update_debug_path();
         res
+    }
+
+    pub fn get_path(&self) -> Option<PcbPath> {
+        self.pcbdron.current_path()
     }
 
     pub fn set_variant(&mut self, ngon: usize, nth_ngon: usize, variant: usize) {

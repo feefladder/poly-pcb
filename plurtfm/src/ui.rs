@@ -209,7 +209,10 @@ impl Interface {
         match self.current_step {
             CurrentStep::SelectPoly => {}
             CurrentStep::MakePath => {
-                self.scene.pcbdrons.add_face_to_path(face_id);
+                if let Some(var_id) = self.scene.pcbdrons.add_face_to_path(face_id) {
+                    self.maybe_request_variant(var_id);
+                }
+                self.notify_update_path()?;
                 // let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
                 // for v in pcbdron.variant_map.iter_mut() {
                 //     VarFlags::Controller.rm(v);

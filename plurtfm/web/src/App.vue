@@ -10,6 +10,7 @@ import {
     type VarFlags,
     type LampDesign,
     type MissingVariants,
+    type PcbPath,
 } from "./pkg/poly_pcb.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
@@ -246,6 +247,15 @@ function on_update_variant(var_id: VarId) {
     // so I'm not sure if we need to update the url now, or we're just happy
 }
 
+function on_update_path(path: PcbPath | undefined) {
+  if (path === undefined) {
+    design.value.path = null
+  } else {
+    design.value.path = path
+  }
+
+}
+
 </script>
 
 <template>
@@ -308,6 +318,9 @@ function on_update_variant(var_id: VarId) {
                     on_update_variant(e.detail!);
                 }
             "
+            @update_path="(e: CustomEventInit<PcbPath>) => {
+              on_update_path(e.detail);
+            } "
             @design_changed="
                 (e: CustomEventInit<PcbDesign>) => (design = e.detail!)
             "

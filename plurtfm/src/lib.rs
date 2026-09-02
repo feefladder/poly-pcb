@@ -391,11 +391,13 @@ impl Interface {
     pub fn complete_path(&mut self) {
         self.scene.pcbdrons.complete_path();
         self.render();
+        self.notify_update_path();
     }
 
     pub fn pop_path(&mut self) {
         self.scene.pcbdrons.pop_path();
         self.render();
+        self.notify_update_path();
     }
 
     pub fn push_path(&mut self, i: usize) {
@@ -404,6 +406,7 @@ impl Interface {
             self.maybe_request_variant(var_id);
         }
         self.render();
+        self.notify_update_path();
     }
 
     pub fn update_variant(&mut self, ngon: usize, nth_ngon: usize, variant: usize) {
@@ -455,6 +458,20 @@ impl Interface {
                 &CustomEvent::new_with_event_init_dict("update_variant", &e_detail).unwrap(),
             )
             .unwrap();
+    }
+
+    /// Send an update not
+    fn notify_update_path(&self) -> Result<(), JsError> {
+        let e_detail = CustomEventInit::new();
+        if let Some(path) = self.scene.pcbdrons.get_path() {
+            e_detail.set_detail(&path.into_ts()?.js_value());
+        }
+        self.canvas
+            .dispatch_event(
+                &CustomEvent::new_with_event_init_dict("update_path", &e_detail).unwrap(),
+            )
+            .unwrap();
+        Ok(())
     }
 }
 
