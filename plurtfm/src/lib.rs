@@ -214,17 +214,6 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
     Ok(iface)
 }
 
-// /// Per n-gon mapping
-// ///
-// /// for truncated tetrahedron, this will only set triangles:
-// /// ```
-// /// use std::collections::BTreeMap;
-// /// use poly_pcb::VariantMap;
-// /// VariantMap(BTreeMap::from([(3, vec![0,1,1,2])]));
-// /// ```
-// #[derive(Serialize, Deserialize, Default, Debug)]
-// pub struct VariantMap(pub BTreeMap<usize, Vec<usize>>);
-
 #[wasm_bindgen]
 #[cfg(target_arch = "wasm32")]
 impl Interface {
@@ -244,45 +233,6 @@ impl Interface {
     pub fn render(&mut self) {
         // actually draw something?
         let screen = RenderTarget::screen(&self.context, self.canvas.width(), self.canvas.height());
-        // // build debugging normal arrows
-        // let positions = Positions::F32(
-        //     self.polyhedron
-        //         .face_transforms
-        //         .iter()
-        //         .flat_map(|t| {
-        //             [
-        //                 (t * vec4(0.0, -0.01, 0.0, 1.0)).truncate(),
-        //                 (t * vec4(0.0, 0.01, 0.0, 1.0)).truncate(),
-        //                 (t * vec4(0.0, 0.00, 1.0, 1.0)).truncate(),
-        //             ]
-        //         })
-        //         .collect(),
-        // );
-
-        // let gm = Wireframe::new_from_cpu_mesh(
-        //     &self.context,
-        //     &CpuMesh {
-        //         positions,
-        //         ..Default::default()
-        //     },
-        //     1.0,
-        //     Srgba::BLUE,
-        // // );
-        // let mut objects: Vec<&dyn Object> = self
-        //     .scene
-        //     .instanced_pcbs
-        //     .iter()
-        //     .flat_map(|f| f.into_iter())
-        //     .collect();
-        // // render face normals?
-        // if false {
-        //     objects.extend(gm.into_iter());
-        // }
-        // // render poly mesh?
-        // if false {
-        //     objects.extend(self.scene.into_iter())
-        // }
-
         screen
             .clear(ClearState::color_and_depth(0.1, 0.1, 0.2, 1.0, 1.0))
             .render(
@@ -445,6 +395,11 @@ impl Interface {
 
     pub fn pop_path(&mut self) {
         self.scene.pcbdrons.pop_path();
+        self.render();
+    }
+
+    pub fn push_path(&mut self, i: usize) {
+        self.scene.pcbdrons.push_path(i);
         self.render();
     }
 

@@ -76,6 +76,14 @@ impl Interface {
                 }
                 _ => {}
             },
+            k if "0123456789".contains(k) => match self.current_step {
+                CurrentStep::MakePath => {
+                    let n = "0123456789".find(k).unwrap();
+                    // exit the current (last) path with this number
+                    self.push_path(n);
+                }
+                _ => {}
+            },
             k => info!("pressed {k:?}"),
         }
 
@@ -122,44 +130,8 @@ impl Interface {
         if let CurrentStep::AssignVariants(variant) = self.current_step
             && let Some(face_id) = self.pick(&MouseEvent::from(event.clone()))
         {
-            debug!("Setting face {face_id} to {variant:?}");
-            // paint the face with the current brush
-            let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
-            pcbdron.variant_map[face_id] = variant;
-            let n_gon = pcbdron.polyhedron.faces[face_id].len();
-            pcbdron.variant_map[face_id] = variant;
-            let nth_ngon = pcbdron
-                .polyhedron
-                .iter_ngon(n_gon)
-                .position(|i| i == face_id)
-                .ok_or(JsError::new(&format!(
-                    "could not find position of {n_gon}-gon at face {face_id}"
-                )))?;
-            let need_fetch = if self.pcbs[n_gon].len() <= variant {
-                true
-            } else if self.pcbs[n_gon][variant].is_none() {
-                true
-            } else {
-                false
-            };
-            let e_detail = CustomEventInit::new();
-            e_detail.set_detail(
-                &VarId {
-                    nth_ngon,
-                    pcb_id: PcbId { n_gon, variant },
-                    need_fetch,
-                }
-                .into(),
-            );
-            self.canvas
-                .dispatch_event(
-                    &CustomEvent::new_with_event_init_dict("update_variant", &e_detail).unwrap(),
-                )
-                .unwrap();
-            self.scene
-                .pcbdrons
-                .update_instances()
-                .expect("can update instances");
+            self.set_variant(face_id, variant);
+
             // need also update the design
         }
         let frac = if event.pointer_type() == "mouse" {

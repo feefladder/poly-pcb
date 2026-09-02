@@ -89,8 +89,12 @@ impl Pcbdron {
         }
     }
 
+    /// Set the polyhedron with the given variant map
+    ///
+    /// This will also clear the edge path
     pub fn set_poly(&mut self, polyhedron: Polyhedron, variant_map: &VariantMap) {
         self.polyhedron = polyhedron;
+        self.polyhedron.edge_path.clear();
         self.apply_variant_map(variant_map);
     }
 
@@ -200,6 +204,7 @@ impl MultiPcbdron {
         variant_map: &VariantMap,
     ) -> exn::Result<(), MultiPcbdronError> {
         self.pcbdron.set_poly(polyhedron, variant_map);
+        self.update_debug_path();
         // so we do set new faces here, but not change/update old ones?
         self.update_instances().or_raise(|| {
             MultiPcbdronError(format!(
@@ -427,6 +432,12 @@ impl MultiPcbdron {
 
     pub fn pop_path(&mut self) {
         self.pcbdron.polyhedron.edge_path.pop();
+        self.update_debug_path();
+    }
+
+    pub fn push_path(&mut self, jumps: usize) {
+        self.pcbdron.polyhedron.push_path(jumps);
+        self.update_instances();
         self.update_debug_path();
     }
 

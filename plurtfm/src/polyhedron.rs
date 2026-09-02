@@ -86,7 +86,7 @@ pub struct PolyEdge {
 }
 
 impl Edge {
-    fn rev(self) -> Self {
+    pub fn rev(self) -> Self {
         Edge {
             start: self.end,
             end: self.start,
@@ -121,7 +121,7 @@ impl From<String> for PolyError {
 }
 
 impl Polyhedron {
-    pub fn iter_ngon(&self, n_sides: usize) -> impl Iterator<Item = usize> {
+    pub fn iter_ngon(&self, n_sides: usize) -> impl Iterator<Item = usize> + Clone {
         self.faces
             .iter()
             .enumerate()
@@ -577,6 +577,60 @@ impl Polyhedron {
         }
     }
 
+    pub fn push_path(&mut self, jumps: usize) {
+        if let Some(last) = self.edge_path.pop() {
+            let exit_n = if self
+                .edge_path
+                .iter()
+                .find(|cr| cr.face_idx == last.face_idx)
+                .is_none()
+            {
+                // first time visiting this polygon
+                // That means the exit edge is rotating clockwise and 1 extra
+                jumps + 1
+            } else {
+                // revisiting polygon
+                // so it's exactly opposite: enter - jumps
+                let enter_n = self.edge_n_on_face(last.face_idx, last.enter).unwrap();
+                enter_n.saturating_sub(jumps)
+            };
+            let exit = self.edge_from_face(last.face_idx, exit_n);
+            self.edge_path.push(last.to_visit().exit(exit));
+            // now, add the next polygon
+            let n_face_idx = self.other_face(last.face_idx, exit_n);
+            // rotate it if first time visitor
+            if self
+                .edge_path
+                .iter()
+                .find(|cr| cr.face_idx == n_face_idx)
+                .is_none()
+            {
+                info!("visiting {n_face_idx} for the first time");
+                let rotate_amount = self.edge_n_on_face(n_face_idx, exit.rev()).unwrap();
+                self.faces[n_face_idx].rotate_left(rotate_amount);
+                self.update_transforms();
+            } else {
+                info!("already visited {n_face_idx}");
+            }
+            self.edge_path.push(PolygonCrossing {
+                face_idx: n_face_idx,
+                enter: exit.rev(),
+                exit: (u32::MAX, u32::MAX).into(),
+            });
+        } else {
+            // There is no path yet, so we just get the nth triangle and call it start
+            let Some(face_idx) = self.iter_ngon(3).cycle().nth(jumps) else {
+                return;
+            };
+            let enter = self.edge_from_face(face_idx, 0);
+            self.edge_path.push(PolygonCrossing {
+                face_idx,
+                enter,
+                exit: (u32::MAX, u32::MAX).into(),
+            });
+        }
+    }
+
     pub fn complete_path(&mut self) {
         let mut face_path_index = vec![Vec::new(); self.faces.len()];
         let mut visited = vec![false; self.faces.len()];
@@ -638,6 +692,9 @@ impl Polyhedron {
     }
 
     /// Get the nth edge of this face in clockwise direction
+    ///
+    /// If `edge_n > ngon`, it will cycle
+    ///
     /// let's say these are face indices:
     /// ```text
     /// 2
@@ -646,7 +703,7 @@ impl Polyhedron {
     /// ```
     /// then edge_from_face(0) will give (face[0], face[1])
     #[inline]
-    fn edge_from_face(&self, face_idx: usize, edge_n: usize) -> Edge {
+    pub fn edge_from_face(&self, face_idx: usize, edge_n: usize) -> Edge {
         let f = &self.faces[face_idx];
         Edge {
             start: f[edge_n % f.len()],
@@ -671,7 +728,7 @@ impl Polyhedron {
             .ok_or_raise(|| format!("No edge connecting face {} with {}", face, other_face).into())
     }
 
-    /// get n of an edgeedge_from_two_faces
+    /// get n of an edge
     pub fn edge_n_on_face(&self, face_idx: usize, edge: Edge) -> Option<usize> {
         self.face_edges(face_idx, 0).position(|e| e == edge)
     }
@@ -968,7 +1025,7 @@ pub struct PolygonVisit {
 }
 
 impl PolygonVisit {
-    fn exit(self, exit: Edge) -> PolygonCrossing {
+    pub fn exit(self, exit: Edge) -> PolygonCrossing {
         PolygonCrossing {
             face_idx: self.face_idx,
             enter: self.enter,
