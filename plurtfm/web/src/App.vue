@@ -8,6 +8,8 @@ import {
     type PcbDesign,
     type Steps,
     type VarFlags,
+    type LampDesign,
+    type MissingVariants,
 } from "./pkg/poly_pcb.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
@@ -50,6 +52,7 @@ window.addEventListener("hashchange", () => {
     apply_url();
 });
 
+/// update url to match current design
 function update_url() {
     const name = design.value.polyhedron;
     const map = design.value.variant_map;
@@ -64,7 +67,7 @@ function update_url() {
             variants.map((v) => v.toString(16)).join(""),
         );
     }
-    if (path.turns) {
+    if (path?.turns) {
         params.set(
             "path",
             `${path.start_ngon}.${path.start_nth}-${path.turns.map((t) => t.toString(16)).join("")}`,
@@ -79,6 +82,7 @@ function update_url() {
     history.replaceState(null, "", hash);
 }
 
+/// Apply the url, that is update the design based on the url
 function apply_url() {
     const hash = decodeURIComponent(location.hash.slice(2)); // remove "#/"
 
@@ -125,7 +129,7 @@ function apply_url() {
             design.value.polyhedron,
             " is different ",
         );
-        design.value.polyhedron = polyhedron;
+      set_design({SinglePoly: design.value });
     } else {
         console.log("could not find ", polyhedron);
         // do nothing
@@ -153,25 +157,16 @@ onMounted(async () => {
     apply_url();
 });
 
+/// this is sad because it's now bidirectional:
+// 1. update url based on design
+// 2. update iface based on url
+// 3. update url and iface based on button inputs
+// and as a result, iface will also be updated if the change comes from there
+// The better would be if there's only two, so the kinda logical thing to do is put it in iface?
+//
 watch(
     design,
     async (state) => {
-        if (iface) {
-            console.log(
-                "setting poly ",
-                state.polyhedron,
-                "with variant map",
-                state.variant_map,
-            );
-            const [missing_variants, corrected_design] = iface.set_polyhedron({
-                SinglePoly: design.value,
-            });
-            if (corrected_design !== null) {
-                state = corrected_design.SinglePoly;
-            }
-            console.log("missing variants", missing_variants);
-            pcbLoader.value!.requestMany(missing_variants);
-        }
         update_url();
     },
     { deep: true },
@@ -190,39 +185,67 @@ watch(
 watch(
   currentVar,
   (v) => {
+    // set the mode to assignvars
     mode.value = 1;
-    console.log(currentStep.value);
   }
 );
 
-function on_request_pcb(var_id: VarId) {
+function set_polyhedron(polyhedron: string) {
+  if (!iface) {
+    return;
+  }
+  design.value.polyhedron = polyhedron;
+  pcbLoader.value!.requestMany(iface.set_polyhedron(polyhedron)![1]);
+}
+
+function on_update_polyhedron(missing_variants: MissingVariants) {
+  design.value.polyhedron = missing_variants[0];
+  pcbLoader.value!.requestMany(missing_variants![1]);
+}
+
+function set_design(new_design: LampDesign) {
+  if (!iface) {
+    return;
+  }
+  const [missing_variants, corrected_design] = iface.apply_design(new_design);
+  if (corrected_design !== null) {
+      design.value = corrected_design.SinglePoly;
+  } else {
+    design.value = new_design.SinglePoly;
+  }
+  console.log("missing variants", missing_variants);
+  pcbLoader.value!.requestMany(missing_variants);
+}
+
+function on_update_variant(var_id: VarId) {
     console.log("request pcb", var_id);
 
     // check if there is actually an stl for the requested variant???? otherwise cycle to 0
-    const { nth_ngon, pcb_id } = var_id;
+    const { nth_ngon, pcb_id, need_fetch } = var_id;
     let { n_gon, variant } = pcb_id;
 
     console.log("requested pcb for ", n_gon, variant);
-    if (!pcbLoader.value?.pcb_exists(n_gon, variant)) {
+    if (!pcbLoader.value?.pcb_exists(n_gon, variant) && need_fetch) {
         console.warn(`pcb ${n_gon} version ${variant} does not exist`);
-        variant = 0;
+      variant = 0;
+      iface.update_variant(n_gon, nth_ngon, variant);
+    } else if (need_fetch) {
+      pcbLoader.value?.loadOne(n_gon, variant)
     }
 
     let entry = design.value.variant_map.find(([n]) => n === n_gon);
-
     if (!entry) {
         entry = [n_gon, []];
         design.value.variant_map.push(entry);
     }
-
     const variants = entry[1];
-
     while (variants.length <= nth_ngon) {
         variants.push(0);
     }
-
     variants[nth_ngon] = variant;
+    // so I'm not sure if we need to update the url now, or we're just happy
 }
+
 </script>
 
 <template>
@@ -249,7 +272,8 @@ function on_request_pcb(var_id: VarId) {
 
                     <select
                         v-if="step === 'SelectPoly' && mode === i"
-                        v-model="design.polyhedron"
+                            :value="design.polyhedron"
+                        @change="set_polyhedron(($event.target as HTMLSelectElement).value)"
                     >
                         <option v-for="name in polyhedra" :key="name">
                             {{ name }}
@@ -264,8 +288,8 @@ function on_request_pcb(var_id: VarId) {
                         </label>
                     </div>
                     <div class="path-menu" v-else-if="step === 'MakePath' && mode === i">
-                    <button  @click="iface.complete_path()" >Find path</button>
-                    <button @click="iface.pop_path()">Back</button>
+                        <button  @click="iface.complete_path()" >Find path</button>
+                        <button @click="iface.pop_path()">Back</button>
                     </div>
                 </div>
             </template>
@@ -278,10 +302,10 @@ function on_request_pcb(var_id: VarId) {
             ref="canvas"
             tabindex="0"
             @keydown="iface.on_key"
-            @next_polyhedron="design.polyhedron = $event.detail"
-            @request_pcb="
+            @next_polyhedron="(e: CustomEventInit<MissingVariants>) => {on_update_polyhedron(e.detail!)}"
+            @update_variant="
                 (e: CustomEventInit<VarId>) => {
-                    on_request_pcb(e.detail!);
+                    on_update_variant(e.detail!);
                 }
             "
             @design_changed="

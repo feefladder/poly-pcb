@@ -9,12 +9,13 @@ use three_d::{
     Axes, ColorMaterial, Context, CpuMaterial, CpuMesh, CpuModel, Gm, InnerSpace, InstancedMesh,
     InstancedModel, Instances, Mat4, Matrix4, Mesh, Object, One, PhysicalMaterial, Srgba, Vec3,
 };
+use wasm_bindgen::convert::OptionIntoWasmAbi;
 use wasm_bindgen::instance;
 
-use crate::VarFlags;
 use crate::design::{LampDesign, PcbDesign, PcbPath};
 use crate::polyhedron::PolygonCrossing;
 use crate::{PcbId, VariantMap, polyhedron::Polyhedron};
+use crate::{VarFlags, pcbdron, polyhedron};
 
 /// A PcbGon knows where which Pcb variant is on a polyhedron
 ///
@@ -75,7 +76,11 @@ impl Pcbdron {
             }
         }
 
-        let path = self.polyhedron.current_path().unwrap_or_else(|p| p);
+        let path = self
+            .polyhedron
+            .current_path()
+            .transpose()
+            .unwrap_or_else(|p| Some(p));
         debug!("current path: {path:?}");
         PcbDesign {
             polyhedron,
@@ -279,25 +284,43 @@ impl MultiPcbdron {
         design: LampDesign,
         sqlite: &Connection,
     ) -> exn::Result<Option<LampDesign>, MultiPcbdronError> {
-        let LampDesign::SinglePoly(mut d) = design;
-        let current_design = self.pcbdron.get_design();
-        if d.polyhedron != current_design.polyhedron {
+        let LampDesign::SinglePoly(PcbDesign {
+            polyhedron,
+            variant_map,
+            path,
+        }) = design;
+        let PcbDesign {
+            polyhedron: cpol,
+            variant_map: cmap,
+            path: cpath,
+        } = self.pcbdron.get_design();
+        if polyhedron != cpol {
             self.pcbdron.set_poly(
-                Polyhedron::load(sqlite, &d.polyhedron).or_raise(|| {
-                    format!("could not apply design for poly {}", d.polyhedron).into()
+                Polyhedron::load(sqlite, &polyhedron).or_raise(|| {
+                    format!("could not apply design for poly {}", polyhedron).into()
                 })?,
-                &d.variant_map,
+                &variant_map,
             );
-        } else if d.variant_map != current_design.variant_map {
-            self.pcbdron.apply_variant_map(&d.variant_map);
+        } else if variant_map != cmap {
+            self.pcbdron.apply_variant_map(&variant_map);
         }
-        let res = if d.path != current_design.path {
-            match self.pcbdron.update_path(&d.path) {
-                Err(path_len) => {
-                    d.path.turns.truncate(path_len);
-                    Ok(Some(LampDesign::SinglePoly(d)))
+        let res = if path != cpath {
+            match path {
+                Some(mut p) => match self.pcbdron.update_path(&p) {
+                    Err(path_len) => {
+                        p.turns.truncate(path_len);
+                        Ok(Some(LampDesign::SinglePoly(PcbDesign {
+                            polyhedron,
+                            variant_map,
+                            path: Some(p),
+                        })))
+                    }
+                    Ok(_) => Ok(None),
+                },
+                None => {
+                    self.pcbdron.polyhedron.edge_path.clear();
+                    Ok(None)
                 }
-                Ok(_) => Ok(None),
             }
         } else {
             Ok(None)
@@ -405,6 +428,13 @@ impl MultiPcbdron {
     pub fn pop_path(&mut self) {
         self.pcbdron.polyhedron.edge_path.pop();
         self.update_debug_path();
+    }
+
+    pub fn set_variant(&mut self, ngon: usize, nth_ngon: usize, variant: usize) {
+        if let Some(face_id) = self.pcbdron.polyhedron.iter_ngon(ngon).nth(nth_ngon) {
+            self.pcbdron.variant_map[face_id] = variant;
+        }
+        self.update_instances();
     }
 
     pub fn update_debug_path(&mut self) {

@@ -478,18 +478,22 @@ impl Polyhedron {
         Ok(())
     }
 
-    pub fn current_path(&self) -> Result<PcbPath, PcbPath> {
-        let first_face = self.edge_path.first().ok_or(PcbPath::default())?;
+    pub fn current_path(&self) -> Option<Result<PcbPath, PcbPath>> {
+        let Some(first_face) = self.edge_path.first() else {
+            return None;
+        };
         debug!("first path face: {first_face:?}");
         let start_ngon = self.faces[first_face.face_idx].len();
         debug!("start_ngon: {start_ngon:?}");
-        let start_nth = self
+        let Some(start_nth) = self
             .iter_ngon(start_ngon)
             .position(|i| i == first_face.face_idx)
-            .ok_or(PcbPath {
+        else {
+            return Some(Err(PcbPath {
                 start_ngon,
                 ..Default::default()
-            })?;
+            }));
+        };
         debug!("start nth: {start_nth}");
         let mut turns = Vec::with_capacity(self.edge_path.len());
         for PolygonCrossing {
@@ -509,20 +513,20 @@ impl Polyhedron {
                 let n_enter = self.edge_n_on_face(*face_idx, *enter).unwrap();
                 let n_exit = self.edge_n_on_face(*face_idx, *exit).unwrap();
                 let Some(turn) = n_enter.checked_sub(n_exit) else {
-                    return Err(PcbPath {
+                    return Some(Err(PcbPath {
                         start_ngon,
                         start_nth,
                         turns,
-                    });
+                    }));
                 };
                 turns.push(turn);
             }
         }
-        Ok(PcbPath {
+        Some(Ok(PcbPath {
             start_ngon,
             start_nth,
             turns,
-        })
+        }))
     }
 
     pub fn add_face_to_path(&mut self, n_face_idx: usize) -> Option<usize> {

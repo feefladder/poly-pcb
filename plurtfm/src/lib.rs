@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 #[cfg(target_arch = "wasm32")]
-use crate::design::{LampDesign, PcbDesign, Wrap};
+use crate::design::{LampDesign, PcbDesign};
 use crate::{
     design::VariantMap,
     pcbdron::MultiPcbdron,
@@ -10,7 +10,7 @@ use crate::{
 };
 use log::info;
 use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use three_d::{
     AmbientLight, Attenuation, Camera, ClearState, Context, CpuGeometry, CpuModel, Light,
     PointLight, RenderTarget, Viewport,
@@ -23,6 +23,7 @@ use tsify::{Ts, declare};
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
+use web_sys::{CustomEvent, CustomEventInit};
 
 mod design;
 mod pcbdron;
@@ -44,6 +45,7 @@ pub struct PcbId {
 pub struct VarId {
     pub nth_ngon: usize,
     pub pcb_id: PcbId,
+    pub need_fetch: bool,
 }
 
 /// Planned variants
@@ -298,7 +300,19 @@ impl Interface {
             );
     }
 
-    pub fn set_polyhedron(&mut self, ts_design: Ts<LampDesign>) -> Result<Ts<SetResult>, JsError> {
+    pub fn set_polyhedron(&mut self, polyhedron: String) -> Result<Ts<MissingVariants>, JsError> {
+        self.scene
+            .pcbdrons
+            .set_pcbdron(
+                Polyhedron::load(&self.connection, &polyhedron).map_err(|e| (*e).clone())?,
+                &Vec::new(),
+            )
+            .map_err(|e| (*e).clone())?;
+        self.render();
+        Ok(MissingVariants(polyhedron, self.missing_variants()).into_ts()?)
+    }
+
+    pub fn apply_design(&mut self, ts_design: Ts<LampDesign>) -> Result<Ts<SetResult>, JsError> {
         let design = ts_design.to_rust()?;
         // compare the given design to our current design
 
@@ -433,7 +447,63 @@ impl Interface {
         self.scene.pcbdrons.pop_path();
         self.render();
     }
+
+    pub fn update_variant(&mut self, ngon: usize, nth_ngon: usize, variant: usize) {
+        self.scene.pcbdrons.set_variant(ngon, nth_ngon, variant);
+        self.render();
+    }
+
+    pub fn set_variant(&mut self, face_id: usize, variant: usize) -> Result<(), JsError> {
+        // set the face to the variant
+        let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
+        pcbdron.variant_map[face_id] = variant;
+
+        // prepare data for event dispatch
+        let n_gon = pcbdron.polyhedron.faces[face_id].len();
+        //
+        // so js-side we keep per-ngon, so need find out which one this is
+        // just dispatch an event and let js update our state
+        let nth_ngon = pcbdron
+            .polyhedron
+            .iter_ngon(n_gon)
+            .position(|i| i == face_id)
+            .ok_or(JsError::new(&format!(
+                "could not find position of {n_gon}-gon at face {face_id}"
+            )))?;
+        let need_fetch = if self.pcbs[n_gon].len() <= variant {
+            true
+        } else if self.pcbs[n_gon][variant].is_none() {
+            true
+        } else {
+            false
+        };
+
+        self.scene
+            .pcbdrons
+            .update_instances()
+            .expect("can update instances");
+
+        let e_detail = CustomEventInit::new();
+        e_detail.set_detail(
+            &VarId {
+                nth_ngon,
+                pcb_id: PcbId { n_gon, variant },
+                need_fetch,
+            }
+            .into(),
+        );
+        self.canvas
+            .dispatch_event(
+                &CustomEvent::new_with_event_init_dict("update_variant", &e_detail).unwrap(),
+            )
+            .unwrap();
+        self.render();
+        Ok(())
+    }
 }
+
+#[derive(Tsify, Serialize)]
+pub struct MissingVariants(pub String, pub Vec<Vec<usize>>);
 
 impl Interface {
     pub fn missing_variants(&self) -> Vec<Vec<usize>> {

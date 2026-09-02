@@ -18,15 +18,12 @@ pub struct PcbPath {
 impl Default for PcbPath {
     fn default() -> Self {
         PcbPath {
-            start_ngon: 2,
+            start_ngon: 3,
             start_nth: 0,
             turns: Vec::new(),
         }
     }
 }
-
-#[derive(Tsify, Serialize, Deserialize)]
-pub struct Wrap<T>(pub T);
 
 /// A [`PcbDesign`] is a minimal description from which a Pcbdron can be built deterministically
 ///
@@ -39,7 +36,7 @@ pub struct PcbDesign {
     /// `[number,number[]][];`
     /// since dicts don't do keys
     pub variant_map: VariantMap,
-    pub path: PcbPath,
+    pub path: Option<PcbPath>,
 }
 
 /// A lamp could theoretically have multiple like different types of designs,

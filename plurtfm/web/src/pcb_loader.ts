@@ -41,6 +41,8 @@ export class PcbLoader {
     this.iface = iface;
   }
 
+  /// A "compile-time" check for the existence of a pcb
+  // this means it doesn't need a roundtrip to resolve
   pcb_exists(n_gon: number, variant: number): boolean {
     const base = `${n_gon}-${variant.toString(2).padStart(2, "0")}`;
     const stl = `./assets/${base}.stl`;
@@ -98,6 +100,7 @@ export class PcbLoader {
         return;
       }
 
+      console.log(`successfully loaded ${nGon}-${variant}`);
       this.iface.add_pcb(nGon, variant, pcb!, name);
       this.loaded.add(`${nGon}-${variant}`);
     } finally {

@@ -6,7 +6,7 @@ use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
 use tsify::{Ts, Tsify, declare};
-use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
+use wasm_bindgen::{JsError, JsValue, convert::IntoWasmAbi, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
 use crate::{Interface, PcbId, VarFlags, VarId};
@@ -91,8 +91,9 @@ impl Interface {
                 .any(|p| p.polyhedron.name == *n)
         }) {
             let next_polyhedron = &polyhedra[(i + 1) % polyhedra.len()];
+            let missing_variants = self.set_polyhedron(next_polyhedron.to_string())?;
             let e_detail = CustomEventInit::new();
-            e_detail.set_detail(&next_polyhedron.into());
+            e_detail.set_detail(&missing_variants.js_value());
             self.canvas
                 .dispatch_event(
                     &CustomEvent::new_with_event_init_dict("next_polyhedron", &e_detail).unwrap(),
@@ -118,16 +119,15 @@ impl Interface {
         // optionally do something here on click-drag
         // like setting faces' colors to black for example
         // for example, I'd say
-        if let CurrentStep::AssignVariants(var) = self.current_step
+        if let CurrentStep::AssignVariants(variant) = self.current_step
             && let Some(face_id) = self.pick(&MouseEvent::from(event.clone()))
         {
-            let variant = usize::from(var);
             debug!("Setting face {face_id} to {variant:?}");
             // paint the face with the current brush
             let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
-            pcbdron.variant_map[face_id] = variant as usize;
+            pcbdron.variant_map[face_id] = variant;
             let n_gon = pcbdron.polyhedron.faces[face_id].len();
-
+            pcbdron.variant_map[face_id] = variant;
             let nth_ngon = pcbdron
                 .polyhedron
                 .iter_ngon(n_gon)
@@ -135,20 +135,31 @@ impl Interface {
                 .ok_or(JsError::new(&format!(
                     "could not find position of {n_gon}-gon at face {face_id}"
                 )))?;
+            let need_fetch = if self.pcbs[n_gon].len() <= variant {
+                true
+            } else if self.pcbs[n_gon][variant].is_none() {
+                true
+            } else {
+                false
+            };
             let e_detail = CustomEventInit::new();
             e_detail.set_detail(
                 &VarId {
                     nth_ngon,
                     pcb_id: PcbId { n_gon, variant },
+                    need_fetch,
                 }
                 .into(),
             );
             self.canvas
                 .dispatch_event(
-                    &CustomEvent::new_with_event_init_dict("request_pcb", &e_detail).unwrap(),
+                    &CustomEvent::new_with_event_init_dict("update_variant", &e_detail).unwrap(),
                 )
                 .unwrap();
-            self.scene.pcbdrons.update_instances();
+            self.scene
+                .pcbdrons
+                .update_instances()
+                .expect("can update instances");
             // need also update the design
         }
         let frac = if event.pointer_type() == "mouse" {
@@ -250,31 +261,7 @@ impl Interface {
                 self.render();
             }
             CurrentStep::AssignVariants(variant) => {
-                let pcbdron = self.scene.pcbdrons.pcbdrons().nth(0).unwrap();
-                let n_gon = pcbdron.polyhedron.faces[face_id].len();
-
-                // so js-side we keep per-ngon, so need find out which one this is
-                // just dispatch an event and let js update our state
-                let nth_ngon = pcbdron
-                    .polyhedron
-                    .iter_ngon(n_gon)
-                    .position(|i| i == face_id)
-                    .ok_or(JsError::new(&format!(
-                        "could not find position of {n_gon}-gon at face {face_id}"
-                    )))?;
-                let e_detail = CustomEventInit::new();
-                e_detail.set_detail(
-                    &VarId {
-                        nth_ngon,
-                        pcb_id: PcbId { n_gon, variant },
-                    }
-                    .into(),
-                );
-                self.canvas
-                    .dispatch_event(
-                        &CustomEvent::new_with_event_init_dict("request_pcb", &e_detail).unwrap(),
-                    )
-                    .unwrap();
+                self.set_variant(face_id, variant);
             }
         }
         Ok(())
