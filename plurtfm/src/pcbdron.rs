@@ -15,7 +15,7 @@ use wasm_bindgen::instance;
 use crate::design::{LampDesign, PcbDesign, PcbPath};
 use crate::polyhedron::PolygonCrossing;
 use crate::{PcbId, VariantMap, polyhedron::Polyhedron};
-use crate::{VarFlags, pcbdron, polyhedron};
+use crate::{VarFlags, VarId, pcbdron, polyhedron};
 
 /// A PcbGon knows where which Pcb variant is on a polyhedron
 ///
@@ -206,12 +206,7 @@ impl MultiPcbdron {
         self.pcbdron.set_poly(polyhedron, variant_map);
         self.update_debug_path();
         // so we do set new faces here, but not change/update old ones?
-        self.update_instances().or_raise(|| {
-            MultiPcbdronError(format!(
-                "failed changing to {:?}",
-                self.pcbdron.polyhedron.name
-            ))
-        })?;
+        self.update_instances();
         Ok(())
     }
 
@@ -330,7 +325,7 @@ impl MultiPcbdron {
         } else {
             Ok(None)
         };
-        self.update_instances()?;
+        self.update_instances();
         self.update_debug_path();
         res
     }
@@ -376,7 +371,7 @@ impl MultiPcbdron {
     /// Update Pcb's GPU instances
     ///
     /// Call this whenever variants or polyhedra change
-    pub fn update_instances(&mut self) -> exn::Result<(), MultiPcbdronError> {
+    pub fn update_instances(&mut self) {
         // clear-and-rebuild for now, would be better to remove-insert later
         // first build own instances, then upload to GPU by changing pcb_models
         for (i, pcb_model) in self.pcb_models.iter_mut().enumerate() {
@@ -406,7 +401,6 @@ impl MultiPcbdron {
                 .iter_mut()
                 .for_each(|pm| pm.geometry.set_instances(&self.instances[i]));
         }
-        Ok(())
     }
 
     pub fn complete_path(&mut self) {
@@ -435,10 +429,35 @@ impl MultiPcbdron {
         self.update_debug_path();
     }
 
-    pub fn push_path(&mut self, jumps: usize) {
-        self.pcbdron.polyhedron.push_path(jumps);
+    pub fn push_path(&mut self, jumps: usize) -> Option<VarId> {
+        let mut res = None;
+        if let Some(fidx) = self.pcbdron.polyhedron.push_path(jumps) {
+            for (i, v) in self.pcbdron.variant_map.iter_mut().enumerate() {
+                if i == fidx {
+                    let variant = VarFlags::Controller.b0();
+                    *v = variant;
+                    let n_gon = self.pcbdron.polyhedron.faces[i].len();
+                    let pcb_id = PcbId { n_gon, variant };
+                    let nth_ngon = self
+                        .pcbdron
+                        .polyhedron
+                        .iter_ngon(n_gon)
+                        .position(|f| f == fidx)
+                        .unwrap();
+                    res = Some(VarId {
+                        nth_ngon,
+                        pcb_id,
+                        // actually we don't know at this point
+                        need_fetch: false,
+                    });
+                } else {
+                    VarFlags::Controller.rm(v);
+                }
+            }
+        };
         self.update_instances();
         self.update_debug_path();
+        res
     }
 
     pub fn set_variant(&mut self, ngon: usize, nth_ngon: usize, variant: usize) {

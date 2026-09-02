@@ -399,7 +399,10 @@ impl Interface {
     }
 
     pub fn push_path(&mut self, i: usize) {
-        self.scene.pcbdrons.push_path(i);
+        if let Some(var_id) = self.scene.pcbdrons.push_path(i) {
+            // so now
+            self.maybe_request_variant(var_id);
+        }
         self.render();
     }
 
@@ -425,35 +428,33 @@ impl Interface {
             .ok_or(JsError::new(&format!(
                 "could not find position of {n_gon}-gon at face {face_id}"
             )))?;
-        let need_fetch = if self.pcbs[n_gon].len() <= variant {
+        self.scene.pcbdrons.update_instances();
+        self.maybe_request_variant(VarId {
+            nth_ngon,
+            pcb_id: PcbId { n_gon, variant },
+            need_fetch: false,
+        });
+        self.render();
+        Ok(())
+    }
+
+    fn maybe_request_variant(&self, mut var_id: VarId) {
+        let PcbId { n_gon, variant } = &var_id.pcb_id;
+        var_id.need_fetch = if self.pcbs[*n_gon].len() <= *variant {
             true
-        } else if self.pcbs[n_gon][variant].is_none() {
+        } else if self.pcbs[*n_gon][*variant].is_none() {
             true
         } else {
             false
         };
 
-        self.scene
-            .pcbdrons
-            .update_instances()
-            .expect("can update instances");
-
         let e_detail = CustomEventInit::new();
-        e_detail.set_detail(
-            &VarId {
-                nth_ngon,
-                pcb_id: PcbId { n_gon, variant },
-                need_fetch,
-            }
-            .into(),
-        );
+        e_detail.set_detail(&var_id.into());
         self.canvas
             .dispatch_event(
                 &CustomEvent::new_with_event_init_dict("update_variant", &e_detail).unwrap(),
             )
             .unwrap();
-        self.render();
-        Ok(())
     }
 }
 

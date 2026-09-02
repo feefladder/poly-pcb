@@ -5,7 +5,7 @@ use rusqlite::Connection;
 use std::{collections::HashMap, error::Error};
 use three_d::*;
 
-use crate::design::PcbPath;
+use crate::{VarId, design::PcbPath};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Polyhedron {
@@ -563,6 +563,7 @@ impl Polyhedron {
             self.update_transforms();
             None
         } else {
+            // There is no path yet
             let enter = self.edge_from_face(n_face_idx, 0);
             self.edge_path.push(PolygonCrossing {
                 face_idx: n_face_idx,
@@ -577,7 +578,7 @@ impl Polyhedron {
         }
     }
 
-    pub fn push_path(&mut self, jumps: usize) {
+    pub fn push_path(&mut self, jumps: usize) -> Option<usize> {
         if let Some(last) = self.edge_path.pop() {
             let exit_n = if self
                 .edge_path
@@ -617,10 +618,11 @@ impl Polyhedron {
                 enter: exit.rev(),
                 exit: (u32::MAX, u32::MAX).into(),
             });
+            None
         } else {
             // There is no path yet, so we just get the nth triangle and call it start
             let Some(face_idx) = self.iter_ngon(3).cycle().nth(jumps) else {
-                return;
+                return None;
             };
             let enter = self.edge_from_face(face_idx, 0);
             self.edge_path.push(PolygonCrossing {
@@ -628,6 +630,7 @@ impl Polyhedron {
                 enter,
                 exit: (u32::MAX, u32::MAX).into(),
             });
+            Some(face_idx)
         }
     }
 
