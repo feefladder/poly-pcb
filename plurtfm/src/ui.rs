@@ -1,21 +1,134 @@
 //! User Interactions
 //!
 //! anything responding to events, because it was growing too big
-
-use log::{debug, info};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
-use three_d::{Cull, InnerSpace, Vec3, Viewport, Zero, pick};
+use std::time::Instant;
+use three_d::{Cull, InnerSpace, Mat3, Quat, Vec3, Viewport, Zero, pick};
 use tsify::{Ts, Tsify, declare};
 use wasm_bindgen::{JsError, JsValue, convert::IntoWasmAbi, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
-use crate::{Interface, PcbId, VarFlags, VarId};
+use crate::{Interface, PcbId, Scene, VarFlags, VarId};
 
 #[derive(Tsify, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CurrentStep {
     SelectPoly,
     AssignVariants(usize),
     MakePath,
+}
+
+#[derive(Debug, Clone)]
+pub struct Tween {
+    pub start: Option<f64>,
+    pub duration: f64,
+    pub ease: fn(f64) -> f64,
+    pub animation: Animation,
+}
+
+impl Tween {
+    fn new(duration: f64, animation: Animation) -> Self {
+        Self {
+            start: None,
+            duration,
+            ease: |x| x,
+            animation,
+        }
+    }
+
+    /// update the tween to the given timestamp, indicating if it's still busy
+    pub fn update(&mut self, scene: &mut Scene, timestamp: f64) -> bool {
+        let start = *self.start.get_or_insert(timestamp);
+        let t = (timestamp - start) / self.duration;
+        if timestamp < start {
+            warn!("timestamp {timestamp} less than start: {:?}", self.start);
+        }
+        // check now for completion, so the ease can do overshoot
+        if t >= 1.0 {
+            self.animation.apply(scene, 1.0);
+            false
+        } else {
+            self.animation.apply(scene, (self.ease)(t));
+            true
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Animation {
+    /// Just orbit the camera around the pcbdron(s) to look at the given face
+    OrbitTo { rot_start: Quat, rot_end: Quat },
+    /// Update instance transforms of the pcbdron(s) to project them onto a plane
+    ProjectPcbDrons,
+    /// Assemble or dissolve the lamp by removing/adding pcbs in path order
+    AssembleLamp,
+}
+
+impl Animation {
+    pub fn orbit_to_face(scene: &Scene, face_idx: usize) -> Self {
+        // ok, so this is a face transform
+        //    ^
+        //    |
+        // <--x
+        // if I understand correctly
+        // yes:
+        // ```text
+        //  2
+        //   \
+        //    1--0
+        // ```
+        // then this will produce a set of axes like
+        // ```text
+        //    y
+        //    |
+        // x<-z (into screen)
+        // ```
+        // to ensure the rake is on the `01` edge
+        let ft = scene
+            .pcbdrons
+            .pcbdrons()
+            .cycle()
+            .flat_map(|pd| &pd.polyhedron.face_transforms)
+            .nth(face_idx)
+            .unwrap();
+        let rot_end = Quat::from(Mat3::from_cols(
+            ft.x.truncate(),
+            ft.y.truncate(),
+            ft.z.truncate(),
+        ));
+        // so copy that convention for the camera
+        let c = &scene.camera;
+        let rot_start = Quat::from(Mat3::from_cols(
+            -c.right_direction(),
+            c.up_orthogonal(),
+            c.target(),
+        ));
+        Self::OrbitTo { rot_start, rot_end }
+    }
+
+    fn apply(&mut self, scene: &mut Scene, value: f64) {
+        match *self {
+            Animation::OrbitTo { rot_start, rot_end } => {
+                // info!("orbitting to {rot_end:?} at {value:?}");
+                // so "looking at a face" means:
+                // normal/target/the vector pointing away from the camera == face normal
+                // (face normals point inside)
+                // up is perpendicular to first edge of polygo
+                // Quat::new(w, xi, yj, zk)
+                let c = &mut scene.camera;
+
+                // this is slightly sad, cuz it means we're always origin-centered
+                // but whatevs
+                // otherwise, it'd be... well, the classic affine-ish thing
+                let r = c.position().magnitude();
+
+                let rot = Mat3::from(rot_start.slerp(rot_end, value as f32));
+
+                c.set_view(-rot.z * r, rot.z, rot.y);
+            }
+            _ => todo!(),
+        }
+    }
 }
 
 pub const N_STEPS: usize = 3;
@@ -67,6 +180,22 @@ impl Interface {
             "Backspace" => match self.current_step {
                 CurrentStep::MakePath => {
                     self.pop_path();
+                    if let Some(face_idx) = self
+                        .scene
+                        .pcbdrons
+                        .pcbdrons()
+                        .last()
+                        .unwrap()
+                        .polyhedron
+                        .edge_path
+                        .last()
+                        .map(|p| p.face_idx)
+                    {
+                        self.add_tween(Tween::new(
+                            500.0,
+                            Animation::orbit_to_face(&self.scene, face_idx),
+                        ));
+                    }
                 }
                 _ => {}
             },
@@ -81,6 +210,21 @@ impl Interface {
                     let n = "0123456789".find(k).unwrap();
                     // exit the current (last) path with this number
                     self.push_path(n);
+                    let face_idx = self
+                        .scene
+                        .pcbdrons
+                        .pcbdrons()
+                        .last()
+                        .unwrap()
+                        .polyhedron
+                        .edge_path
+                        .last()
+                        .unwrap()
+                        .face_idx;
+                    self.add_tween(Tween::new(
+                        500.0,
+                        Animation::orbit_to_face(&self.scene, face_idx),
+                    ));
                 }
                 _ => {}
             },

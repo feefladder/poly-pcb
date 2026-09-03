@@ -6,7 +6,7 @@ use crate::{
     design::VariantMap,
     pcbdron::MultiPcbdron,
     polyhedron::Polyhedron,
-    ui::{CurrentStep, STEPS},
+    ui::{CurrentStep, STEPS, Tween},
 };
 use log::info;
 use rusqlite::Connection;
@@ -122,6 +122,7 @@ pub struct Interface {
     /// I don't care about unused first 3 units and 7 and 9
     pcbs: [Vec<Option<CpuModel>>; 11],
     current_step: CurrentStep,
+    tweens: Vec<Tween>,
 }
 
 /// The scene is well, the scene
@@ -209,6 +210,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         // https://stackoverflow.com/a/54134142/14681457
         pcbs: Default::default(),
         current_step: STEPS[0],
+        tweens: Vec::new(),
     };
 
     Ok(iface)
@@ -228,6 +230,15 @@ impl Interface {
     pub fn set_step(&mut self, step: Ts<CurrentStep>) -> Result<(), JsError> {
         self.current_step = step.to_rust()?;
         Ok(())
+    }
+
+    pub fn animate(&mut self, timestamp: f64) -> bool {
+        info!("animating {} tweens", self.tweens.len());
+        self.tweens
+            .retain_mut(|tween| tween.update(&mut self.scene, timestamp));
+        info!("{} tweens left", self.tweens.len());
+        self.render();
+        !self.tweens.is_empty()
     }
 
     pub fn render(&mut self) {
@@ -506,6 +517,18 @@ impl Interface {
         missing_variants
     }
 
+    pub fn add_tween(&mut self, tween: Tween) {
+        info!("adding {}th tween {tween:?}", self.tweens.len() + 1);
+        // ah ok
+        if !self.tweens.is_empty() {
+            self.tweens.push(tween);
+        } else {
+            self.tweens.push(tween);
+            self.canvas
+                .dispatch_event(&CustomEvent::new("start_animation").unwrap())
+                .unwrap();
+        }
+    }
     // we don't manually update instances, but keep them up-to-date when adding pcbs
     // or changing variant? Not there yet... In any case, that'd be a MultiPcbdron thing
     // pub fn update_instances(&mut self) -> Result<(), JsError> {

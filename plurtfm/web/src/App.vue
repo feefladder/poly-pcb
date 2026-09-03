@@ -256,6 +256,17 @@ function on_update_path(path: PcbPath | undefined) {
 
 }
 
+function animate(timestamp: number) {
+  console.log("animating", timestamp);
+  if (iface?.animate(timestamp)) {
+    requestAnimationFrame(animate)
+  }
+}
+
+function start_animation() {
+  requestAnimationFrame(animate)
+}
+
 </script>
 
 <template>
@@ -324,6 +335,7 @@ function on_update_path(path: PcbPath | undefined) {
             @design_changed="
                 (e: CustomEventInit<PcbDesign>) => (design = e.detail!)
             "
+            @start_animation="(e:CustomEventInit<number>) => (start_animation())"
             @pointerdown="iface?.on_pointer_down"
             @pointermove="iface?.on_pointer_move"
             @pointerup="iface?.on_pointer_up"

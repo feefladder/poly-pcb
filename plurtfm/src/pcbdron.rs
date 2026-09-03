@@ -155,7 +155,7 @@ impl From<String> for MultiPcbdronError {
 }
 
 impl MultiPcbdron {
-    pub fn pcbdrons(&self) -> impl Iterator<Item = &Pcbdron> {
+    pub fn pcbdrons(&self) -> impl Iterator<Item = &Pcbdron> + Clone {
         std::iter::once(&self.pcbdron)
     }
 
