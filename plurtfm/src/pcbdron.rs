@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::iter;
 use std::{error::Error, iter::FlatMap};
 
 use derive_more::Display;
@@ -12,7 +13,7 @@ use three_d::{
 use wasm_bindgen::convert::OptionIntoWasmAbi;
 use wasm_bindgen::instance;
 
-use crate::design::{LampDesign, PcbDesign, PcbPath};
+use crate::design::{LampDesign, PcbDesign, PcbPath, PcbPaths};
 use crate::polyhedron::PolygonCrossing;
 use crate::{PcbId, VariantMap, polyhedron::Polyhedron};
 use crate::{VarFlags, VarId, pcbdron, polyhedron};
@@ -114,6 +115,41 @@ impl Pcbdron {
     pub fn update_path(&mut self, path: &PcbPath) -> Result<(), usize> {
         self.polyhedron.apply_path(path)
     }
+
+    /// Set the controller on this pcbdron
+    ///
+    /// Kind of by definition-ish, there can only be one controller and it has
+    /// to be on the first pcbdron
+    ///
+    /// otherwise this entire pathfinding is a bit meaningless
+    fn set_controller(&mut self, face_idx: usize) -> Option<VarId> {
+        let mut res = None;
+        if face_idx > self.polyhedron.faces.len() {
+            return res;
+        }
+        for (i, v) in self.variant_map.iter_mut().enumerate() {
+            if i == face_idx {
+                let variant = VarFlags::Controller.b0();
+                *v = variant;
+                let n_gon = self.polyhedron.faces[i].len();
+                let pcb_id = PcbId { n_gon, variant };
+                let nth_ngon = self
+                    .polyhedron
+                    .iter_ngon(n_gon)
+                    .position(|f| f == face_idx)
+                    .unwrap();
+                res = Some(VarId {
+                    nth_ngon,
+                    pcb_id,
+                    // actually we don't know at this point
+                    need_fetch: false,
+                });
+            } else {
+                VarFlags::Controller.rm(v);
+            }
+        }
+        res
+    }
 }
 
 /// [`MultiPcbdron`] can be rendered as self-contained something
@@ -122,7 +158,10 @@ impl Pcbdron {
 ///
 /// importantly, it can go geometryid + instanceid -> faceid
 pub struct MultiPcbdron {
-    pcbdron: Pcbdron,
+    /// A linear list of pcbdrons
+    ///
+    /// The path will follow this order
+    pcbdrons: Vec<Pcbdron>,
     /// The actual pcbs, including their transforms
     ///
     /// These are InstancedModels to support multi-mesh gltf pcbs
@@ -142,6 +181,13 @@ pub struct MultiPcbdron {
     ///
     /// This is a simple instancedmesh
     path_gm: Gm<InstancedMesh, ColorMaterial>,
+    // /// The number of unvisited faces in each pcbdron's path
+    // ///
+    // /// Not sure if I like this though, maybe just have a boolean?
+    // /// because...
+    // /// well, the pcbdron doesn't know if it's path is completed
+    // /// also it doesn't really care, in theory a path could like jump faces and such
+    // unpathed_faces: Vec<usize>,
 }
 
 #[derive(Debug, Display, Clone)]
@@ -156,7 +202,7 @@ impl From<String> for MultiPcbdronError {
 
 impl MultiPcbdron {
     pub fn pcbdrons(&self) -> impl Iterator<Item = &Pcbdron> + Clone {
-        std::iter::once(&self.pcbdron)
+        self.pcbdrons.iter()
     }
 
     pub fn debug_path(&self) -> &Gm<InstancedMesh, ColorMaterial> {
@@ -164,7 +210,7 @@ impl MultiPcbdron {
     }
 
     pub fn pcbdrons_mut(&mut self) -> impl Iterator<Item = &mut Pcbdron> {
-        std::iter::once(&mut self.pcbdron)
+        self.pcbdrons.iter_mut()
     }
 
     /// from geometry_id, instance_id, get face id
@@ -189,9 +235,22 @@ impl MultiPcbdron {
                     return None;
                 };
                 // now need find nth
-                // There is something bla going on here, where in case of multiple pcbdrons, we'd be chaining them together
-                // and because of that, the below is already kinda correct
-                return self.pcbdron.iter_variant(*pcb_id).nth(instance_id as usize);
+                //
+                // this function needs to be kept in sync with update_instances
+                // machinery:
+                //
+                //
+                // what is going on?
+                // the pick returns a model id, instance id.
+                // from model id, we get pcb_id
+                // in case of multiple pcbdrons, we chain them together
+                //
+                // and the instance_id needs to be retrievable by just going
+                // in-order over the variants
+                return self
+                    .pcbdrons()
+                    .flat_map(|p| p.iter_variant(*pcb_id))
+                    .nth(instance_id as usize);
             }
             id -= geometries.len();
         }
@@ -206,7 +265,8 @@ impl MultiPcbdron {
         polyhedron: Polyhedron,
         variant_map: &VariantMap,
     ) -> exn::Result<(), MultiPcbdronError> {
-        self.pcbdron.set_poly(polyhedron, variant_map);
+        self.pcbdrons.truncate(1);
+        self.pcbdrons[0].set_poly(polyhedron, variant_map);
         self.update_debug_path();
         // so we do set new faces here, but not change/update old ones?
         self.update_instances();
@@ -254,7 +314,7 @@ impl MultiPcbdron {
         };
 
         let mut res = Self {
-            pcbdron,
+            pcbdrons: vec![pcbdron],
             pcb_models: Vec::new(),
             instances: Vec::new(),
             instance_map: Vec::new(),
@@ -296,20 +356,20 @@ impl MultiPcbdron {
             polyhedron: cpol,
             variant_map: cmap,
             path: cpath,
-        } = self.pcbdron.get_design();
+        } = self.pcbdrons[0].get_design();
         if polyhedron != cpol {
-            self.pcbdron.set_poly(
+            self.pcbdrons[0].set_poly(
                 Polyhedron::load(sqlite, &polyhedron).or_raise(|| {
                     format!("could not apply design for poly {}", polyhedron).into()
                 })?,
                 &variant_map,
             );
         } else if variant_map != cmap {
-            self.pcbdron.apply_variant_map(&variant_map);
+            self.pcbdrons[0].apply_variant_map(&variant_map);
         }
         let res = if path != cpath {
             match path {
-                Some(mut p) => match self.pcbdron.update_path(&p) {
+                Some(mut p) => match self.pcbdrons[0].update_path(&p) {
                     Err(path_len) => {
                         p.turns.truncate(path_len);
                         Ok(Some(LampDesign::SinglePoly(PcbDesign {
@@ -321,7 +381,7 @@ impl MultiPcbdron {
                     Ok(_) => Ok(None),
                 },
                 None => {
-                    self.pcbdron.polyhedron.edge_path.clear();
+                    self.pcbdrons[0].polyhedron.edge_path.clear();
                     Ok(None)
                 }
             }
@@ -331,6 +391,13 @@ impl MultiPcbdron {
         self.update_instances();
         self.update_debug_path();
         res
+    }
+
+    fn variant_transforms(pcbdrons: &[Pcbdron], pcb_id: PcbId) -> impl Iterator<Item = Mat4> {
+        pcbdrons.iter().flat_map(move |p| {
+            p.iter_variant(pcb_id)
+                .map(|idx| p.polyhedron.face_transforms[idx])
+        })
     }
 
     /// Add this pcb to self
@@ -343,11 +410,7 @@ impl MultiPcbdron {
         model: &CpuModel,
     ) -> exn::Result<(), MultiPcbdronError> {
         //
-        let transformations = self
-            .pcbdron
-            .iter_variant(pcb_id)
-            .map(|idx| self.pcbdron.polyhedron.face_transforms[idx])
-            .collect();
+        let transformations = Self::variant_transforms(&self.pcbdrons, pcb_id).collect();
         let colors = None;
         // Some(
         //     self.pcbdron
@@ -381,11 +444,9 @@ impl MultiPcbdron {
             // a pcb_model is a single pcb, but contains more than one mesh for different parts
             let pcb_id = self.instance_map[i];
             // set own instances to face transforms
-            self.instances[i].transformations = self
-                .pcbdron
-                .iter_variant(pcb_id)
-                .map(|idx| self.pcbdron.polyhedron.face_transforms[idx])
-                .collect();
+            let transforms = Self::variant_transforms(&self.pcbdrons, pcb_id).collect();
+            self.instances[i].transformations = transforms;
+
             // optional debug colors
             // self.instances[i].colors = Some(
             //     self.pcbdron
@@ -407,100 +468,108 @@ impl MultiPcbdron {
     }
 
     pub fn complete_path(&mut self) {
-        self.pcbdron.polyhedron.complete_path();
-        self.update_instances();
-        self.update_debug_path();
+        if let Some(todron) = self
+            .pcbdrons
+            .iter_mut()
+            .find(|p| !p.polyhedron.path_complete_questionmark())
+        {
+            todron.polyhedron.complete_path();
+            self.update_instances();
+            self.update_debug_path();
+        }
     }
 
+    /// Add a face to the path
+    /// face indices are local and based on the
     pub fn add_face_to_path(&mut self, face_idx: usize) -> Option<VarId> {
         info!("adding face {face_idx}");
         let mut res = None;
-        if let Some(fidx) = self.pcbdron.polyhedron.add_face_to_path(face_idx) {
-            for (i, v) in self.pcbdron.variant_map.iter_mut().enumerate() {
-                if i == fidx {
-                    let variant = VarFlags::Controller.b0();
-                    *v = variant;
-                    let n_gon = self.pcbdron.polyhedron.faces[i].len();
-                    let pcb_id = PcbId { n_gon, variant };
-                    let nth_ngon = self
-                        .pcbdron
-                        .polyhedron
-                        .iter_ngon(n_gon)
-                        .position(|f| f == fidx)
-                        .unwrap();
-                    res = Some(VarId {
-                        nth_ngon,
-                        pcb_id,
-                        // actually we don't know at this point
-                        need_fetch: false,
-                    });
-                } else {
-                    VarFlags::Controller.rm(v);
-                }
-            }
+        if let Some((fidx, dron)) = self
+            .pcbdrons
+            .iter_mut()
+            .find(|d| d.polyhedron.path_complete_questionmark())
+            .map(|p| p.polyhedron.add_face_to_path(face_idx).zip(Some(p)))
+            .flatten()
+        {
+            dron.set_controller(fidx);
         }
         self.update_instances();
         self.update_debug_path();
         res
     }
 
+    /// pop the last index from the path
+    ///
+    /// somethingsomething about needing a linear path
+    /// so even if a path has multiple like pcbdrons, it's still not allowed to be patchy
     pub fn pop_path(&mut self) {
-        self.pcbdron.polyhedron.edge_path.pop();
-        self.update_debug_path();
+        if let Some(activedron) = self.pcbdrons.iter_mut().rfind(|dron| {
+            !dron.polyhedron.edge_path.is_empty() && dron.polyhedron.path_complete_questionmark()
+        }) {
+            activedron.polyhedron.edge_path.pop();
+            self.update_debug_path();
+        }
     }
 
     pub fn push_path(&mut self, jumps: usize) -> Option<VarId> {
         let mut res = None;
-        if let Some(fidx) = self.pcbdron.polyhedron.push_path(jumps) {
-            for (i, v) in self.pcbdron.variant_map.iter_mut().enumerate() {
-                if i == fidx {
-                    let variant = VarFlags::Controller.b0();
-                    *v = variant;
-                    let n_gon = self.pcbdron.polyhedron.faces[i].len();
-                    let pcb_id = PcbId { n_gon, variant };
-                    let nth_ngon = self
-                        .pcbdron
-                        .polyhedron
-                        .iter_ngon(n_gon)
-                        .position(|f| f == fidx)
-                        .unwrap();
-                    res = Some(VarId {
-                        nth_ngon,
-                        pcb_id,
-                        // actually we don't know at this point
-                        need_fetch: false,
-                    });
-                } else {
-                    VarFlags::Controller.rm(v);
-                }
+        if let Some(activedron) = self.pcbdrons_mut().find(|dron| {
+            !dron.polyhedron.edge_path.is_empty() && dron.polyhedron.path_complete_questionmark()
+        }) {
+            if let Some(fidx) = activedron.polyhedron.push_path(jumps) {
+                activedron.set_controller(fidx);
             }
-        };
+        }
         self.update_instances();
         self.update_debug_path();
         res
     }
 
-    pub fn get_path(&self) -> Option<PcbPath> {
-        self.pcbdron.current_path()
+    pub fn get_path(&self) -> PcbPaths {
+        self.pcbdrons
+            .iter()
+            .flat_map(|d| d.current_path())
+            .collect::<Vec<_>>()
+            .into()
     }
 
+    /// Set the given ngon to this variant
+    ///
+    ///
     pub fn set_variant(&mut self, ngon: usize, nth_ngon: usize, variant: usize) {
-        if let Some(face_id) = self.pcbdron.polyhedron.iter_ngon(ngon).nth(nth_ngon) {
-            self.pcbdron.variant_map[face_id] = variant;
+        if let Some((fidx, dridx)) = self
+            .pcbdrons
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| p.polyhedron.iter_ngon(ngon).zip(iter::repeat(i)))
+            .nth(nth_ngon)
+        {
+            self.pcbdrons[dridx].variant_map[fidx] = variant;
+            self.update_instances();
         }
-        self.update_instances();
     }
 
+    /// ok, here's a very hacky but brilliant idea:
+    ///
+    /// so the last exit edge of a path is like not really used, and for
+    /// devastation I've set it to Edge::from((usize::MAX, usize::MAX)), which
+    /// ensures it overflows any place it is used.
+    ///
+    /// therefore, it's safe to say that it's useless at this point.
+    ///
+    /// so in that case, the semantics could be changed, where it indicates that in stead of being a polyhedron edge, it's a face-face edge from one pcbdron to the next
+    /// so it'll just make that debug path nicely, but have to work around possible devastation
     pub fn update_debug_path(&mut self) {
         // so here we basically want to have arrows that point in the right directions or something
         // maybe we can also do that with an instancedmodel of an arrow?
-        let hedron = &self.pcbdron.polyhedron;
 
         let instances = &mut self.path_instances;
         instances.transformations.clear();
         let colors = instances.colors.as_mut().unwrap();
         colors.clear();
-
+        // for hedron in self.pcbdrons.iter().filter(predicate) {
+        todo!();
+        let hedron = &self.pcbdrons[0].polyhedron;
         // we still want to clear everything on "no path"
         // so then we return early, avoiding the overflow-subtract below
         if hedron.edge_path.is_empty() {

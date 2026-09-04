@@ -15,6 +15,14 @@ pub struct PcbPath {
     pub turns: Vec<usize>,
 }
 
+#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct PcbPaths(Vec<PcbPath>);
+impl From<Vec<PcbPath>> for PcbPaths {
+    fn from(value: Vec<PcbPath>) -> Self {
+        Self(value)
+    }
+}
+
 impl Default for PcbPath {
     fn default() -> Self {
         PcbPath {

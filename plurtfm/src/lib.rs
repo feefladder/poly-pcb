@@ -474,9 +474,8 @@ impl Interface {
     /// Send an update not
     fn notify_update_path(&self) -> Result<(), JsError> {
         let e_detail = CustomEventInit::new();
-        if let Some(path) = self.scene.pcbdrons.get_path() {
-            e_detail.set_detail(&path.into_ts()?.js_value());
-        }
+        let path = self.scene.pcbdrons.get_path();
+        e_detail.set_detail(&path.into_ts()?.js_value());
         self.canvas
             .dispatch_event(
                 &CustomEvent::new_with_event_init_dict("update_path", &e_detail).unwrap(),
