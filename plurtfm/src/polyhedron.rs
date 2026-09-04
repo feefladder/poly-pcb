@@ -67,6 +67,7 @@ pub struct Polyhedron {
     ///
     /// And orientation of pcbs is done according to edge indices of the face normally.
     pub edge_path: Vec<PolygonCrossing>,
+    pub visited: Vec<bool>,
 }
 
 /// An edge of a polyhedron
@@ -161,6 +162,7 @@ impl Polyhedron {
             edges: HashMap::new(),
             face_transforms: Vec::new(),
             edge_path: Vec::new(),
+            visited: Vec::new(),
         };
 
         let mut stmt = conn
@@ -219,6 +221,8 @@ impl Polyhedron {
             .chunk_by(|(face_id_a, _, _), (face_id_b, _, _)| face_id_a == face_id_b)
             .map(|slice| slice.iter().map(|(_, vertex_id, _)| *vertex_id).collect())
             .collect();
+
+        poly.visited = vec![false; poly.faces.len()];
 
         let mut stmt = conn
             .prepare(
@@ -659,7 +663,7 @@ impl Polyhedron {
             return;
         };
 
-        if self.dfs(&mut face_path_index, &mut visited, v.to_visit()) {
+        if self.dfs(&mut face_path_index, v.to_visit()) {
             self.update_transforms();
         }
     }
@@ -671,7 +675,6 @@ impl Polyhedron {
 
         if self.dfs(
             &mut (0..self.faces.len()).map(|_i| Vec::new()).collect(),
-            &mut visited,
             PolygonVisit {
                 face_idx: start_face_idx,
                 enter: (start_face[0], start_face[1]).into(),
@@ -764,12 +767,7 @@ impl Polyhedron {
     /// If a path is found, will update self
     ///
     /// path is a path as found on self, and face_path_index is an index of where in the path a given face can be found
-    fn dfs(
-        &mut self,
-        face_path_index: &mut Vec<Vec<usize>>,
-        visited: &mut Vec<bool>,
-        visit: PolygonVisit,
-    ) -> bool {
+    fn dfs(&mut self, face_path_index: &mut Vec<Vec<usize>>, visit: PolygonVisit) -> bool {
         // So I mean, this works, but it's illegible. So what would be nice is
         // to have some face/edge-related functions on polyhedron....
         //
@@ -791,7 +789,7 @@ impl Polyhedron {
         // it almost feels like having some silly type that is Face(Vec<u32>) just to be able to nicen the zip(skip) iterator hell?
         let fidx = visit.face_idx;
 
-        if visited[fidx] {
+        if self.visited[fidx] {
             error!(
                 "should call revisit_dfs when revisiting {:?}",
                 self.edge_path
@@ -799,11 +797,11 @@ impl Polyhedron {
             return false;
         }
         // rotate poly so we're entering on edge 0-1
-        visited[fidx] = true;
+        self.visited[fidx] = true;
         let rotate_amount = self.edge_n_on_face(fidx, visit.enter).unwrap();
         self.faces[fidx].rotate_left(rotate_amount);
         // success condition: all faces visited (this can only happen on first visit)
-        if visited.iter().all(|v| *v) {
+        if self.visited.iter().all(|v| *v) {
             // add current visit
             // exit is devastating if misused
             self.edge_path.push(visit.exit((u32::MAX, u32::MAX).into()));
@@ -877,7 +875,6 @@ impl Polyhedron {
                 self.edge_path.push(visit.exit(*edge));
                 if self.dfs(
                     face_path_index,
-                    visited,
                     PolygonVisit {
                         face_idx: n_face_idx,
                         enter: edge.rev(),
@@ -908,7 +905,7 @@ impl Polyhedron {
             //         .collect::<Vec<_>>()
             // );
             // So here it'd be better to do some alternative "I'm revisiting a face!"-type dfs
-            if self.revisit_dfs(face_path_index, visited, revisit.1) {
+            if self.revisit_dfs(face_path_index, revisit.1) {
                 return true;
             } else {
                 face_path_index[revisit.0.face_idx].pop();
@@ -917,16 +914,11 @@ impl Polyhedron {
         }
 
         // we were the ones visiting
-        visited[fidx] = false;
+        self.visited[fidx] = false;
         false
     }
 
-    fn revisit_dfs(
-        &mut self,
-        face_path_index: &mut Vec<Vec<usize>>,
-        visited: &mut Vec<bool>,
-        visit: PolygonVisit,
-    ) -> bool {
+    fn revisit_dfs(&mut self, face_path_index: &mut Vec<Vec<usize>>, visit: PolygonVisit) -> bool {
         // ```
         //    3
         // 2 /-\ 4
@@ -990,7 +982,6 @@ impl Polyhedron {
                 self.edge_path.push(visit.exit(e));
                 if self.dfs(
                     face_path_index,
-                    visited,
                     PolygonVisit {
                         face_idx: n_face_idx,
                         enter: e.rev(),
@@ -1141,6 +1132,7 @@ mod test {
             // ],
             face_transforms: vec![Mat4::zero(); 4],
             edge_path: Vec::new(),
+            visited: vec![false; 4],
         };
         tet.find_path(0).unwrap();
         assert_eq!(
