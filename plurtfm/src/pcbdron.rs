@@ -533,20 +533,22 @@ impl MultiPcbdron {
             .into()
     }
 
-    /// Set the given ngon to this variant
-    ///
-    ///
-    pub fn set_variant(&mut self, ngon: usize, nth_ngon: usize, variant: usize) {
-        if let Some((fidx, dridx)) = self
-            .pcbdrons
+    fn nth_ngon(&self, ngon: usize, nth_ngon: usize) -> Option<(usize, usize)> {
+        self.pcbdrons
             .iter()
             .enumerate()
             .flat_map(|(i, p)| p.polyhedron.iter_ngon(ngon).zip(iter::repeat(i)))
             .nth(nth_ngon)
-        {
+    }
+
+    /// Set the given ngon to this variant
+    ///
+    ///
+    pub fn set_variant(&mut self, ngon: usize, nth_ngon: usize, variant: usize) {
+        if let Some((fidx, dridx)) = self.nth_ngon(ngon, nth_ngon) {
             self.pcbdrons[dridx].variant_map[fidx] = variant;
-            self.update_instances();
         }
+        self.update_instances();
     }
 
     /// ok, here's a very hacky but brilliant idea:
@@ -567,60 +569,82 @@ impl MultiPcbdron {
         instances.transformations.clear();
         let colors = instances.colors.as_mut().unwrap();
         colors.clear();
-        // for hedron in self.pcbdrons.iter().filter(predicate) {
-        todo!();
-        let hedron = &self.pcbdrons[0].polyhedron;
-        // we still want to clear everything on "no path"
-        // so then we return early, avoiding the overflow-subtract below
-        if hedron.edge_path.is_empty() {
-            self.path_gm.set_instances(&self.path_instances);
-            return;
-        }
-        let imax = hedron.edge_path.len() - 1;
-        for (
-            i,
-            PolygonCrossing {
-                face_idx,
-                enter,
-                exit,
-            },
-        ) in hedron.edge_path.iter().enumerate()
-        {
-            if i == imax {
-                // let edge_n = hedron.edge_n_on_face(*face_idx, *enter).unwrap();
-                // let n_face_idx = hedron.other_face(*face_idx, edge_n);
-                // for the last, there is no crossing, so we add the enter arrow from the last one
-                // (this made more sense wrt. serializing a path)
-                // except it messes everything up in case we're manually making a path
-                // because in that case the exit edge is bs
-                // so...
-                // aah...
-                // ehh...
-                //
-                instances.transformations.push(from_to_transform(
-                    hedron.edge_centroid(*enter),
-                    hedron.face_centroid(*face_idx),
-                    hedron.face_normal(*face_idx),
-                ));
+        for dron in &self.pcbdrons {
+            let hedron = &dron.polyhedron;
+
+            // we still want to clear everything on "no path"
+            //
+            // Since the path is monotonically increasing with drons, we can
+            // return
+            //
+            // avoiding the overflow-subtract below
+            if hedron.edge_path.is_empty() {
+                self.path_gm.set_instances(&self.path_instances);
+                return;
+            }
+            let imax = hedron.edge_path.len() - 1;
+            for (
+                i,
+                PolygonCrossing {
+                    face_idx,
+                    enter,
+                    exit,
+                },
+            ) in hedron.edge_path.iter().enumerate()
+            {
+                if i == imax {
+                    // let edge_n = hedron.edge_n_on_face(*face_idx, *enter).unwrap();
+                    // let n_face_idx = hedron.other_face(*face_idx, edge_n);
+                    // for the last, there is no crossing, so we add the enter arrow from the last one
+                    // (this made more sense wrt. serializing a path)
+                    // except it messes everything up in case we're manually making a path
+                    // because in that case the exit edge is bs
+                    // so...
+                    // aah...
+                    // ehh...
+                    //
+                    instances.transformations.push(from_to_transform(
+                        hedron.edge_centroid(*enter),
+                        hedron.face_centroid(*face_idx),
+                        hedron.face_normal(*face_idx),
+                    ));
+                    let c = colorous::MAGMA.eval_rational(i, imax.max(1));
+                    colors.push(Srgba::new_opaque(c.r, c.g, c.b));
+                    // also add the arrow (if it exists) from this poly to the next
+                    if exit.start as usize == *face_idx {
+                        if let Some(next_dron) = self.pcbdrons.get(i + 1) {
+                            // there could be the case that the user added a
+                            // smaller dron and the edge ran out-of-sync
+                            //
+                            // ignore
+                            let from = hedron.face_centroid(*face_idx);
+                            let to = next_dron.polyhedron.face_centroid(exit.end as usize);
+                            // just pick a slightly random vec and orthogonize
+                            let mut z = hedron.face_transforms[*face_idx].x.truncate();
+                            z -= z * z.dot((from - to).normalize());
+                            instances
+                                .transformations
+                                .push(from_to_transform(from, to, z));
+                        }
+                    }
+                } else if i == 0 && VarFlags::Controller.has(dron.variant_map[*face_idx]) {
+                    // for the first, just give the output arrow
+                    instances.transformations.push(from_to_transform(
+                        hedron.face_centroid(*face_idx),
+                        hedron.edge_centroid(*exit),
+                        hedron.face_normal(*face_idx),
+                    ));
+                } else {
+                    // point from edge to edge
+                    instances.transformations.push(from_to_transform(
+                        hedron.edge_centroid(*enter),
+                        hedron.edge_centroid(*exit),
+                        hedron.face_normal(*face_idx),
+                    ));
+                }
                 let c = colorous::MAGMA.eval_rational(i, imax.max(1));
                 colors.push(Srgba::new_opaque(c.r, c.g, c.b));
-            } else if i == 0 && VarFlags::Controller.has(self.pcbdron.variant_map[*face_idx]) {
-                // for the first, just give the output arrow
-                instances.transformations.push(from_to_transform(
-                    hedron.face_centroid(*face_idx),
-                    hedron.edge_centroid(*exit),
-                    hedron.face_normal(*face_idx),
-                ));
-            } else {
-                // point from edge to edge
-                instances.transformations.push(from_to_transform(
-                    hedron.edge_centroid(*enter),
-                    hedron.edge_centroid(*exit),
-                    hedron.face_normal(*face_idx),
-                ));
             }
-            let c = colorous::MAGMA.eval_rational(i, imax.max(1));
-            colors.push(Srgba::new_opaque(c.r, c.g, c.b));
         }
         // build instances
         //         self.path_instances
