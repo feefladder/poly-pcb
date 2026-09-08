@@ -45,8 +45,19 @@ const currentStep = computed<CurrentStep | undefined>(() => {
 }
 });
 const currentVariant: Ref<number[]> = ref([]);
-const currentVar = computed<number>(() => {
-  return currentVariant.value.reduce((mask, variant) => mask | (1 << variant), 0);
+
+const currentVar = computed<number>({
+    get() {
+        return currentVariant.value.reduce(
+            (mask, variant) => mask | (1 << variant),
+            0,
+        );
+    },
+    set(mask) {
+        currentVariant.value = allVariants.value
+            .map((_, i) => i)
+            .filter(i => mask & (1 << i));
+    },
 });
 
 window.addEventListener("hashchange", () => {
@@ -374,6 +385,7 @@ function start_animation() {
             tabindex="0"
             @keydown="iface.on_key"
             @next_polyhedron="(e: CustomEventInit<MissingVariants>) => {on_update_polyhedron(e.detail!, 0)}"
+            @update_current_var="(e: CustomEventInit<number>) => { currentVar = e.detail! }"
             @update_variant="
                 (e: CustomEventInit<VarId>) => {
                     on_update_variant(e.detail!);

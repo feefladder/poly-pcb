@@ -181,11 +181,23 @@ impl Interface {
                 }
                 _ => {}
             },
-            k if "0123456789".contains(k) => match self.current_step {
+            k if "0123456789".contains(k) => match &mut self.current_step {
+                CurrentStep::AssignVariants(v) => {
+                    *v = k.parse().unwrap();
+                    // emit random event
+                    let e_detail = CustomEventInit::new();
+                    e_detail.set_detail(&JsValue::from(*v));
+                    self.canvas
+                        .dispatch_event(
+                            &CustomEvent::new_with_event_init_dict("update_current_var", &e_detail)
+                                .unwrap(),
+                        )
+                        .unwrap();
+                }
                 CurrentStep::MakePath => {
-                    let n = "0123456789".find(k).unwrap();
+                    // let n = "0123456789".find(k).unwrap();
                     // exit the current (last) path with this number
-                    self.path_jump(n);
+                    self.path_jump(k.parse().unwrap());
                     self.cam_to_last_dron();
                 }
                 _ => {}

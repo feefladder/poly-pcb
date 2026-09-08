@@ -500,13 +500,15 @@ impl Interface {
 
     /// Send an update not
     fn notify_update_path(&self) -> Result<(), JsError> {
-        let e_detail = CustomEventInit::new();
         let path = self.scene.pcboron.get_path();
-        e_detail.set_detail(&path.into_ts()?.js_value());
+        self.event("update_path", path)
+    }
+
+    fn event<T: Tsify + Serialize>(&self, name: &str, detail: T) -> Result<(), JsError> {
+        let e_detail = CustomEventInit::new();
+        e_detail.set_detail(&detail.into_ts()?.js_value());
         self.canvas
-            .dispatch_event(
-                &CustomEvent::new_with_event_init_dict("update_path", &e_detail).unwrap(),
-            )
+            .dispatch_event(&CustomEvent::new_with_event_init_dict(name, &e_detail).unwrap())
             .unwrap();
         Ok(())
     }
