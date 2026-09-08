@@ -5,12 +5,12 @@ import {
     Interface,
     PcbId,
     VarId,
-    type PcbDesign,
+    type PcBorsign,
     type Steps,
     type VarFlags,
-    type LampDesign,
     type MissingVariants,
     type PcbPath,
+    type PcbPaths,
 } from "./pkg/poly_pcb.js";
 import { loadAsset, PcbLoader } from "./pcb_loader.js";
 
@@ -29,10 +29,10 @@ const polyhedra: Ref<string[]> = ref([]);
 const pcbLoader = ref<PcbLoader | null>(null);
 const canvas = ref();
 const mode = ref<number>(0);
-const design = ref<PcbDesign>({
-    polyhedron: "tetrahedron",
-    variant_map: [[3, [4, 0, 1, 2]]],
-    path: { start_ngon: 3, start_nth: 0, turns: [] },
+const design = ref<PcBorsign>({
+    polyhedra: [],
+    variant_map: [],
+    path: []
 });
 let iface: Interface;
 const allSteps: Ref<CurrentStep[]> = ref([]);
@@ -55,10 +55,10 @@ window.addEventListener("hashchange", () => {
 
 /// update url to match current design
 function update_url() {
-    const name = design.value.polyhedron;
+    const names = design.value.polyhedra;
     const map = design.value.variant_map;
-    const path = design.value.path;
-    let hash = `#/${name.replace(/ /g, "-")}`;
+    const paths = design.value.path;
+    let hash = `#/${names.map(name=>name.replace(/ /g, "-")).join("|")}`;
 
     const params = new URLSearchParams();
 
@@ -68,12 +68,11 @@ function update_url() {
             variants.map((v) => v.toString(16)).join(""),
         );
     }
-    if (path?.turns) {
-        params.set(
-            "path",
-            `${path.start_ngon}.${path.start_nth}-${path.turns.map((t) => t.toString(16)).join("")}`,
-        );
-    }
+  let path = paths.map(path => `${path.start_ngon}.${path.start_nth}-${path.turns.map((t) => t.toString(16)).join("")}`).join("_");
+  if (path) {
+    params.set("path", path);
+  }
+
 
     const query = params.toString();
     if (query) {
@@ -88,7 +87,7 @@ function apply_url() {
     const hash = decodeURIComponent(location.hash.slice(2)); // remove "#/"
 
     const [polyUrl, query = ""] = hash.split("?", 2);
-    const polyhedron = polyUrl?.toLowerCase().replace(/[-_ ]+/g, " ");
+    const polyhedra = polyUrl?.toLowerCase().replace(/[-_ ]+/g, " ").split("|");
     const entries: [number, number[]][] = [];
     const params = new URLSearchParams(query);
 
@@ -106,11 +105,11 @@ function apply_url() {
         if (match) {
             const [, startNgon, startNth, turns = ""] = match;
 
-            design.value.path = {
+            design.value.path = [{
                 start_ngon: Number(startNgon),
                 start_nth: Number(startNth),
                 turns: [...turns].map((c) => parseInt(c, 16)),
-            };
+            }];
         }
     }
 
@@ -119,20 +118,19 @@ function apply_url() {
     }
 
     if (
-        polyhedron &&
-        polyhedra.value.includes(polyhedron) &&
-        design.value.polyhedron != polyhedron
+        polyhedra
     ) {
         console.log(
             "setting polyhedron to ",
-            polyhedron,
+            polyhedra,
             " because ",
-            design.value.polyhedron,
+            design.value.polyhedra,
             " is different ",
         );
-      set_design({SinglePoly: design.value });
+      design.value.polyhedra = polyhedra;
+      set_design(design.value);
     } else {
-        console.log("could not find ", polyhedron);
+        console.log("could not find ", polyhedra);
         // do nothing
     }
 }
@@ -158,7 +156,7 @@ onMounted(async () => {
     apply_url();
 });
 
-/// this is sad because it's now bidirectional:
+// this is sad because it's now bidirectional:
 // 1. update url based on design
 // 2. update iface based on url
 // 3. update url and iface based on button inputs
@@ -191,28 +189,46 @@ watch(
   }
 );
 
-function set_polyhedron(polyhedron: string) {
+function set_polyhedron(polyhedron: string, index: number) {
   if (!iface) {
     return;
   }
-  design.value.polyhedron = polyhedron;
-  pcbLoader.value!.requestMany(iface.set_polyhedron(polyhedron)![1]);
+  design.value.polyhedra[index] = polyhedron;
+  pcbLoader.value!.requestMany(iface.set_polyhedron(polyhedron, index)![1]);
 }
 
-function on_update_polyhedron(missing_variants: MissingVariants) {
-  design.value.polyhedron = missing_variants[0];
+
+function push_polyhedron(polyhedron: string) {
+  if (!iface) {
+    return;
+  }
+  design.value.polyhedra.push(polyhedron);
+  pcbLoader.value!.requestMany(iface.push_polyhedron(polyhedron)![1]);
+}
+
+function pop_polyhedron() {
+  if (!iface) {
+    return;
+  }
+  design.value.polyhedra.pop();
+  iface.pop_polyhedron();
+}
+
+function on_update_polyhedron(missing_variants: MissingVariants, index: number) {
+  design.value.polyhedra[index] = missing_variants[0];
   pcbLoader.value!.requestMany(missing_variants![1]);
 }
 
-function set_design(new_design: LampDesign) {
+function set_design(new_design: PcBorsign) {
   if (!iface) {
+    console.warn("setting design without initialized iface")
     return;
   }
   const [missing_variants, corrected_design] = iface.apply_design(new_design);
   if (corrected_design !== null) {
-      design.value = corrected_design.SinglePoly;
+      design.value = corrected_design;
   } else {
-    design.value = new_design.SinglePoly;
+    design.value = new_design;
   }
   console.log("missing variants", missing_variants);
   pcbLoader.value!.requestMany(missing_variants);
@@ -222,20 +238,21 @@ function on_update_variant(var_id: VarId) {
     console.log("request pcb", var_id);
 
     // check if there is actually an stl for the requested variant???? otherwise cycle to 0
-    const { nth_ngon, pcb_id, need_fetch } = var_id;
+    const { nth_ngon, pcb_id } = var_id;
     let { n_gon, variant } = pcb_id;
 
     console.log("requested pcb for ", n_gon, variant);
-    if (!pcbLoader.value?.pcb_exists(n_gon, variant) && need_fetch) {
+    if (!pcbLoader.value?.pcb_exists(n_gon, variant)) {
         console.warn(`pcb ${n_gon} version ${variant} does not exist`);
-      variant = 0;
-      iface.update_variant(n_gon, nth_ngon, variant);
-    } else if (need_fetch) {
+      var_id.pcb_id.variant = 0;
+      iface.update_variant(var_id);
+    } else {
       pcbLoader.value?.loadOne(n_gon, variant)
     }
 
     let entry = design.value.variant_map.find(([n]) => n === n_gon);
     if (!entry) {
+        console.warn(`entry for ${n_gon} does not exist yet, creating`)
         entry = [n_gon, []];
         design.value.variant_map.push(entry);
     }
@@ -247,9 +264,9 @@ function on_update_variant(var_id: VarId) {
     // so I'm not sure if we need to update the url now, or we're just happy
 }
 
-function on_update_path(path: PcbPath | undefined) {
+function on_update_path(path: PcbPaths | undefined) {
   if (path === undefined) {
-    design.value.path = null
+    design.value.path = []
   } else {
     design.value.path = path
   }
@@ -257,7 +274,6 @@ function on_update_path(path: PcbPath | undefined) {
 }
 
 function animate(timestamp: number) {
-  console.log("animating", timestamp);
   if (iface?.animate(timestamp)) {
     requestAnimationFrame(animate)
   }
@@ -291,21 +307,55 @@ function start_animation() {
                         {{ i + 1 }}. {{ allSteps[i] }}
                     </button>
 
-                    <select
-                        v-if="step === 'SelectPoly' && mode === i"
-                            :value="design.polyhedron"
-                        @change="set_polyhedron(($event.target as HTMLSelectElement).value)"
-                    >
-                        <option v-for="name in polyhedra" :key="name">
-                            {{ name }}
-                        </option>
-                    </select>
+                    <div v-if="step === 'SelectPoly' && mode === i" class="polyhedron-selects">
+                        <button v-if="design.polyhedra.length > 0" @click="pop_polyhedron()">-</button>
+                        <select
+                            v-for="(name, j) in design.polyhedra"
+                            :key="j"
+                            :value="name"
+                            @change="set_polyhedron(
+                                ($event.target as HTMLSelectElement).value,
+                                j
+                            )"
+                        >
+                            <option
+                                v-for="name in polyhedra"
+                                :key="name"
+                                :value="name"
+                            >
+                                {{ name }}
+                            </option>
+                        </select>
+
+                        <select
+                            value="+"
+                            @change="push_polyhedron(($event.target as HTMLSelectElement).value);
+                                         ($event.target as HTMLSelectElement).value = '+'"
+                        >
+                            <option value="+" disabled>+</option>
+                            <option
+                                v-for="name in polyhedra"
+                                :key="name"
+                                :value="name"
+                            >
+                                {{ name }}
+                            </option>
+                        </select>
+                    </div>
                     <div
                     class="variant-menu"
                         v-else-if="typeof step === 'object' && 'AssignVariants' in step && mode === i"
                     >
                         <label v-for="(variant,i) in allVariants">
                             <input type="checkbox" :value="i" v-model="currentVariant"> {{ variant }} </input>
+                        </label>
+                    </div>
+                    <div
+                    class="variant-menu"
+                        v-else-if="step === 'MakePath' && mode === i"
+                    >
+                        <label v-for="(variant,i) in design.polyhedra">
+                            <input type="checkbox" :value="i" v-model="showPolys"> {{ variant }} </input>
                         </label>
                     </div>
                     <div class="path-menu" v-else-if="step === 'MakePath' && mode === i">
@@ -323,17 +373,17 @@ function start_animation() {
             ref="canvas"
             tabindex="0"
             @keydown="iface.on_key"
-            @next_polyhedron="(e: CustomEventInit<MissingVariants>) => {on_update_polyhedron(e.detail!)}"
+            @next_polyhedron="(e: CustomEventInit<MissingVariants>) => {on_update_polyhedron(e.detail!, 0)}"
             @update_variant="
                 (e: CustomEventInit<VarId>) => {
                     on_update_variant(e.detail!);
                 }
             "
-            @update_path="(e: CustomEventInit<PcbPath>) => {
+            @update_path="(e: CustomEventInit<PcbPaths>) => {
               on_update_path(e.detail);
             } "
             @design_changed="
-                (e: CustomEventInit<PcbDesign>) => (design = e.detail!)
+                (e: CustomEventInit<PcBorsign>) => (design = e.detail!)
             "
             @start_animation="(e:CustomEventInit<number>) => (start_animation())"
             @pointerdown="iface?.on_pointer_down"
@@ -377,19 +427,26 @@ select option {
     color: #fff;
 }
 
+.polyhedron-selects {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+}
+
 header {
     position: absolute;
     inset: 0 0 auto 0;
     z-index: 100;
     display: flex;
-    align-items: center;
+    /*align-items: center;*/
     /*justify-content: center;*/
     justify-content: space-between;
     gap: 1rem;
     padding: 1rem;
 
-    backdrop-filter: blur(8px);
-    pointer-events: all;
+    backdrop-filter: blur(2px);
+    /*pointer-events: all;*/
 }
 
 header select {

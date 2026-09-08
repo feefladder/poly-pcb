@@ -88,6 +88,13 @@ pub struct PolyEdge {
 }
 
 impl Edge {
+    pub fn dev() -> Self {
+        Self {
+            start: u32::MAX,
+            end: u32::MAX,
+        }
+    }
+
     pub fn rev(self) -> Self {
         Edge {
             start: self.end,
@@ -425,20 +432,17 @@ impl Polyhedron {
             return Ok(());
         } else if path.turns.len() == 1 {
             let face_idx = start_face;
-            self.edge_path.push(PolygonCrossing {
+            self.cross(PolygonCrossing {
                 face_idx,
                 enter: self.edge_from_face(face_idx, 0),
                 exit: self.edge_from_face(face_idx, 1),
             });
             return Ok(());
         }
-        // we make a visited array because we rotate polygons on first visit
-        let mut visited = vec![false; self.faces.len()];
-        visited[start_face] = true;
         let n = path.turns[0] + 1;
         let exit = self.edge_from_face(start_face, n);
 
-        self.edge_path.push(PolygonCrossing {
+        self.cross(PolygonCrossing {
             face_idx: start_face,
             enter: self.edge_from_face(start_face, 0),
             exit,
@@ -450,15 +454,14 @@ impl Polyhedron {
         for (i, turn) in path.turns.iter().enumerate().skip(1) {
             // rotate the face so it points at the enter
             // this is also in dfs, so maybe generify somehow?
-            if !visited[visit.face_idx] {
+            if self.face_path_index[visit.face_idx].is_empty() {
                 // rotate poly so we're entering on edge 0-1
-                visited[visit.face_idx] = true;
                 let rotate_amount = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
                 self.faces[visit.face_idx].rotate_left(rotate_amount);
                 // then set next visit
                 let n = turn + 1;
                 let exit = self.edge_from_face(visit.face_idx, n);
-                self.edge_path.push(visit.exit(exit));
+                self.cross(visit.exit(exit));
                 visit = PolygonVisit {
                     face_idx: self.other_face(visit.face_idx, n),
                     enter: exit.rev(),
@@ -588,7 +591,7 @@ impl Polyhedron {
     /// Additionally, the next face can be a revisit. If not, we'll rotate the face.
     ///
     /// TODO: check crossing rules; do we need to keep a face_path_index around?
-    pub fn push_path(&mut self, jumps: usize) -> Option<usize> {
+    pub fn path_jump(&mut self, jumps: usize) -> Option<usize> {
         if let Some(last) = self.edge_path.pop() {
             // need to do a full path search, since it's already marked as visited previously
             // If we have a face_path_index, is there really a need for a visited array?
@@ -603,6 +606,7 @@ impl Polyhedron {
                 enter_n.saturating_sub(jumps)
             };
             let exit = self.edge_from_face(last.face_idx, exit_n);
+            // here directly push, since it's already in visits
             self.edge_path.push(last.to_visit().exit(exit));
             // now, add the next polygon
             let n_face_idx = self.other_face(last.face_idx, exit_n);
@@ -619,11 +623,14 @@ impl Polyhedron {
                 self.update_transforms();
             } else {
                 info!("already visited {n_face_idx}");
+                if !self.can_revisit(n_face_idx, exit.rev()) {
+                    info!("cannot revisit {n_face_idx:?}");
+                    return None;
+                }
             }
-            self.edge_path.push(PolygonCrossing {
+            self.push(PolygonVisit {
                 face_idx: n_face_idx,
                 enter: exit.rev(),
-                exit: (u32::MAX, u32::MAX).into(),
             });
             None
         } else {
@@ -632,13 +639,34 @@ impl Polyhedron {
                 return None;
             };
             let enter = self.edge_from_face(face_idx, 0);
-            self.edge_path.push(PolygonCrossing {
-                face_idx,
-                enter,
-                exit: (u32::MAX, u32::MAX).into(),
-            });
+            self.push(PolygonVisit { face_idx, enter });
             Some(face_idx)
         }
+    }
+
+    pub fn pop_path(&mut self) -> Option<usize> {
+        let Some(last) = self.edge_path.pop() else {
+            return None;
+        };
+        self.face_path_index[last.face_idx].pop();
+        self.edge_path.last().map(|cr| cr.face_idx)
+    }
+
+    pub fn push(&mut self, v: PolygonVisit) {
+        self.face_path_index[v.face_idx].push(self.edge_path.len());
+        self.edge_path.push(v.exit(Edge::dev()));
+        if self.face_path_index.iter().all(|f| !f.is_empty()) {
+            info!(
+                "Path complete at length {}, {}",
+                self.edge_path.len(),
+                self.path_complete_questionmark()
+            );
+        }
+    }
+
+    pub fn cross(&mut self, cr: PolygonCrossing) {
+        self.face_path_index[cr.face_idx].push(self.edge_path.len());
+        self.edge_path.push(cr);
     }
 
     pub fn path_complete_questionmark(&self) -> bool {

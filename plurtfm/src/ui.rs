@@ -3,13 +3,12 @@
 //! anything responding to events, because it was growing too big
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
 use three_d::{Cull, InnerSpace, Mat3, Quat, Vec3, Viewport, Zero, pick};
 use tsify::{Ts, Tsify, declare};
 use wasm_bindgen::{JsError, JsValue, convert::IntoWasmAbi, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
-use crate::{Interface, PcbId, Scene, VarFlags, VarId};
+use crate::{Interface, PcbId, Scene, VarFlags, VarId, pcboron::Fidx};
 
 #[derive(Tsify, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CurrentStep {
@@ -27,7 +26,7 @@ pub struct Tween {
 }
 
 impl Tween {
-    fn new(duration: f64, animation: Animation) -> Self {
+    pub fn new(duration: f64, animation: Animation) -> Self {
         Self {
             start: None,
             duration,
@@ -65,7 +64,7 @@ pub enum Animation {
 }
 
 impl Animation {
-    pub fn orbit_to_face(scene: &Scene, face_idx: usize) -> Self {
+    pub fn orbit_to_face(scene: &Scene, Fidx { fidx, dridx }: Fidx) -> Self {
         // ok, so this is a face transform
         //    ^
         //    |
@@ -84,13 +83,7 @@ impl Animation {
         // x<-z (into screen)
         // ```
         // to ensure the rake is on the `01` edge
-        let ft = scene
-            .pcbdrons
-            .pcbdrons()
-            .cycle()
-            .flat_map(|pd| &pd.polyhedron.face_transforms)
-            .nth(face_idx)
-            .unwrap();
+        let ft = &scene.pcboron.pcbdrons()[dridx].polyhedron.face_transforms[fidx];
         let rot_end = Quat::from(Mat3::from_cols(
             ft.x.truncate(),
             ft.y.truncate(),
@@ -178,25 +171,8 @@ impl Interface {
                 self.next_polyhedron();
             }
             "Backspace" => match self.current_step {
-                CurrentStep::MakePath => {
-                    self.pop_path();
-                    if let Some(face_idx) = self
-                        .scene
-                        .pcbdrons
-                        .pcbdrons()
-                        .last()
-                        .unwrap()
-                        .polyhedron
-                        .edge_path
-                        .last()
-                        .map(|p| p.face_idx)
-                    {
-                        self.add_tween(Tween::new(
-                            500.0,
-                            Animation::orbit_to_face(&self.scene, face_idx),
-                        ));
-                    }
-                }
+                CurrentStep::SelectPoly => self.pop_polyhedron(),
+                CurrentStep::MakePath => self.pop_path(),
                 _ => {}
             },
             "Enter" => match self.current_step {
@@ -209,22 +185,8 @@ impl Interface {
                 CurrentStep::MakePath => {
                     let n = "0123456789".find(k).unwrap();
                     // exit the current (last) path with this number
-                    self.push_path(n);
-                    let face_idx = self
-                        .scene
-                        .pcbdrons
-                        .pcbdrons()
-                        .last()
-                        .unwrap()
-                        .polyhedron
-                        .edge_path
-                        .last()
-                        .unwrap()
-                        .face_idx;
-                    self.add_tween(Tween::new(
-                        500.0,
-                        Animation::orbit_to_face(&self.scene, face_idx),
-                    ));
+                    self.path_jump(n);
+                    self.cam_to_last_dron();
                 }
                 _ => {}
             },
@@ -238,12 +200,14 @@ impl Interface {
         let polyhedra = self.polyhedron_names()?;
         if let Some(i) = polyhedra.iter().position(|n| {
             self.scene
-                .pcbdrons
+                .pcboron
                 .pcbdrons()
+                .iter()
                 .any(|p| p.polyhedron.name == *n)
         }) {
             let next_polyhedron = &polyhedra[(i + 1) % polyhedra.len()];
-            let missing_variants = self.set_polyhedron(next_polyhedron.to_string())?;
+            let missing_variants =
+                self.set_polyhedron(next_polyhedron.to_string(), self.scene.pcboron.n() - 1)?;
             let e_detail = CustomEventInit::new();
             e_detail.set_detail(&missing_variants.js_value());
             self.canvas
@@ -252,9 +216,32 @@ impl Interface {
                 )
                 .unwrap();
         }
-        self.scene.pcbdrons.update_debug_path();
+        self.scene.pcboron.update_debug_path();
         self.render();
         Ok(())
+    }
+
+    fn cam_to_last_dron(&mut self) {
+        if let Some((i, dron)) = self
+            .scene
+            .pcboron
+            .pcbdrons()
+            .iter()
+            .enumerate()
+            .filter(|(i, p)| !p.polyhedron.edge_path.is_empty())
+            .last()
+        {
+            self.add_tween(Tween::new(
+                500.0,
+                Animation::orbit_to_face(
+                    &self.scene,
+                    Fidx {
+                        dridx: i,
+                        fidx: dron.polyhedron.edge_path.last().unwrap().face_idx,
+                    },
+                ),
+            ));
+        }
     }
 
     pub fn on_pointer_down(&mut self, event: PointerEvent) -> Result<(), JsValue> {
@@ -272,9 +259,9 @@ impl Interface {
         // like setting faces' colors to black for example
         // for example, I'd say
         if let CurrentStep::AssignVariants(variant) = self.current_step
-            && let Some(face_id) = self.pick(&MouseEvent::from(event.clone()))
+            && let Some(varid) = self.pick(&MouseEvent::from(event.clone()))
         {
-            self.set_variant(face_id, variant);
+            self.set_variant(varid, variant);
 
             // need also update the design
         }
@@ -324,13 +311,13 @@ impl Interface {
         (x, y)
     }
 
-    fn pick(&self, event: &MouseEvent) -> Option<usize> {
+    fn pick(&self, event: &MouseEvent) -> Option<VarId> {
         let (x, y) = self.event_to_xy(event);
         if let Some(p) = pick(
             &self.context,
             &self.scene.camera,
             (x, y),
-            self.scene.pcbdrons.into_iter(),
+            self.scene.pcboron.body_iter(),
             Cull::Back,
         )
         .ok()?
@@ -339,25 +326,26 @@ impl Interface {
                 "clicked on face with geometry id {}, instance id {}",
                 p.geometry_id, p.instance_id
             );
-            self.scene.pcbdrons.pick(p.geometry_id, p.instance_id)
+            self.scene.pcboron.pick(p.geometry_id, p.instance_id)
         } else {
             None
         }
     }
 
-    pub fn on_click(&mut self, event: MouseEvent) -> Result<(), JsError> {
-        let face_id = self
-            .pick(&event)
-            .ok_or(JsError::new("clicked on nothing"))?;
-        info!("which corresponds to face n. {face_id} on pcbdron 0");
+    pub fn on_click(&mut self, event: MouseEvent) {
+        let Some(varid) = self.pick(&event) else {
+            return;
+        };
+        info!("which corresponds to face n. {varid:?}");
         match self.current_step {
             CurrentStep::SelectPoly => {}
             CurrentStep::MakePath => {
-                if let Some(var_id) = self.scene.pcbdrons.add_face_to_path(face_id) {
-                    self.maybe_request_variant(var_id);
+                if let Some(controller_id) = self.scene.pcboron.add_face_to_path(varid) {
+                    self.maybe_request_variant(controller_id);
                 }
-                self.notify_update_path()?;
-                // let pcbdron = self.scene.pcbdrons.pcbdrons_mut().nth(0).unwrap();
+                self.cam_to_last_dron();
+                self.notify_update_path().ok();
+                // let pcbdron = self.scene.pcboron.pcboron_mut().nth(0).unwrap();
                 // for v in pcbdron.variant_map.iter_mut() {
                 //     VarFlags::Controller.rm(v);
                 // }
@@ -373,17 +361,16 @@ impl Interface {
                 //     )
                 //     .unwrap();
                 // self.scene
-                //     .pcbdrons
+                //     .pcboron
                 //     .update_instances()
                 //     .map_err(|e| JsError::new(&e.to_string()))?;
-                // self.scene.pcbdrons.update_debug_path();
+                // self.scene.pcboron.update_debug_path();
                 self.render();
             }
             CurrentStep::AssignVariants(variant) => {
-                self.set_variant(face_id, variant);
+                self.set_variant(varid, variant);
             }
         }
-        Ok(())
     }
 
     pub fn on_resize(&mut self) {

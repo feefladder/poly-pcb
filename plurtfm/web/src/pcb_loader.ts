@@ -53,6 +53,10 @@ export class PcbLoader {
     }
   }
 
+  key(nGon: number, variant: number): string {
+    return `${nGon}-${variant}`;
+  }
+
   requestMany(missingVariants: number[][]) {
     const promises = [];
 
@@ -61,7 +65,7 @@ export class PcbLoader {
         continue;
       }
       for (const variant of variants) {
-        const key = `${nGon}-${variant}`;
+        const key = this.key(nGon, variant);
 
         if (this.loaded.has(key)) continue;
 
@@ -80,6 +84,9 @@ export class PcbLoader {
   }
 
   async loadOne(nGon: number, variant: number) {
+    if (this.loaded.has(this.key(nGon, variant))) {
+      return;
+    }
     this.busy = true;
     this.loadingCount++;
 

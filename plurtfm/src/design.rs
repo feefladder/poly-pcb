@@ -33,24 +33,66 @@ impl Default for PcbPath {
     }
 }
 
-/// A [`PcbDesign`] is a minimal description from which a Pcbdron can be built deterministically
+/// A [`PcBorsign`] is a minimal description from which a [`Pcboron`] can be built deterministically
 ///
 /// As such it serves as the interface I guess?
 #[derive(Tsify, Serialize, Deserialize, Default, Debug)]
-pub struct PcbDesign {
-    pub polyhedron: String,
+pub struct PcBorsign {
+    /// The polyhedra that this pcboron contains
+    pub polyhedra: Vec<String>,
     /// The variant map
     /// In js/ts this should actually be a
     /// `[number,number[]][];`
     /// since dicts don't do keys
     pub variant_map: VariantMap,
+
+    pub path: Vec<PcbPath>,
+}
+
+impl PcBorsign {
+    pub fn add(
+        mut self,
+        PcbDrosign {
+            polyhedron,
+            variant_map,
+            path,
+        }: PcbDrosign,
+    ) -> Self {
+        self.polyhedra.push(polyhedron);
+        for (ngon, vars) in variant_map {
+            if let Some((_, v)) = self.variant_map.iter_mut().find(|(ng, _)| *ng == ngon) {
+                v.extend_from_slice(&vars);
+            } else {
+                self.variant_map.push((ngon, vars));
+            }
+        }
+        if let Some(p) = path {
+            self.path.push(p);
+        }
+        self
+    }
+}
+
+/// A design of a Pcbdron
+///
+/// This is what a Pcbdron emits, and is collected into a PcBorsign.
+pub struct PcbDrosign {
+    pub polyhedron: String,
+    pub variant_map: VariantMap,
+    /// The (optional) PcbPath
+    ///
+    /// Since in js it has a nth_ngon start face,
+    /// it's an option, whereas in rust it can just be an empty vec
     pub path: Option<PcbPath>,
 }
 
-/// A lamp could theoretically have multiple like different types of designs,
-///
-/// For now, there's only a single version in the enum, but that's ok
-#[derive(Tsify, Serialize, Deserialize, Debug)]
-pub enum LampDesign {
-    SinglePoly(PcbDesign),
+impl From<PcbDrosign> for PcBorsign {
+    fn from(value: PcbDrosign) -> Self {
+        let path = value.path.map(|v| vec![v]).unwrap_or_default();
+        Self {
+            polyhedra: vec![value.polyhedron],
+            variant_map: value.variant_map,
+            path,
+        }
+    }
 }
