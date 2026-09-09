@@ -1,4 +1,4 @@
-use three_d::{InnerSpace, Mat4, Vec3};
+use three_d::{InnerSpace, Mat4, Quat, Vec3};
 
 /// A stereographic projection
 /// ```text
@@ -39,16 +39,20 @@ impl Stereojection {
         let y = t.y.truncate();
         let z = t.z.truncate();
         // project
-        let zp = a * a.dot(z).signum();
-        let xp;
-        let yp;
-        if 1.0 - a.dot(x).abs() < 1e-8 {
-            yp = (y - a * a.dot(y)).normalize();
-            xp = yp.cross(zp);
-        } else {
-            xp = (x - a * a.dot(x)).normalize();
-            yp = zp.cross(xp);
+        if a.dot(z).signum() != -1.0 {
+            return t;
         }
+        let zp = -a;
+        let q = Quat::from_arc(z, zp, None);
+        let xp = q * x;
+        let yp = q * y;
+        // if 1.0 - a.dot(x).abs() < 1e-8 {
+        //     yp = (y - a * a.dot(y)).normalize();
+        //     xp = yp.cross(zp);
+        // } else {
+        //     xp = (x - a * a.dot(x)).normalize();
+        //     yp = zp.cross(xp);
+        // }
 
         Mat4::from_cols(
             // transform is just orthograpically aligned to plane
