@@ -32,6 +32,8 @@ mod polyhedron;
 #[cfg(target_arch = "wasm32")]
 mod ui;
 
+mod stereojection;
+
 mod assign_variants;
 mod make_path;
 mod select_poly;

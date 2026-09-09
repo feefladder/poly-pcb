@@ -189,6 +189,14 @@ impl Interface {
                 }
                 CurrentStep::MakePath => {
                     self.complete_path();
+                    info!("updating projections");
+                    self.scene
+                        .pcboron
+                        .pcbdrons
+                        .iter_mut()
+                        .for_each(|b| b.update_projections(None));
+                    self.scene.pcboron.update_instances();
+                    self.render();
                 }
                 _ => {}
             },

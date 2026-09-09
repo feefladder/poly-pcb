@@ -24,7 +24,7 @@ use crate::{
 ///
 /// but doesn't know how to construct itself
 ///
-/// importantly, it can go geometryid + instanceid -> faceid
+/// importantly, it can go geometryid + instanceid -> varid
 pub struct Pcboron {
     /// A linear list of pcbdrons
     ///
@@ -139,6 +139,7 @@ impl Pcboron {
             //     .sphere(context, material)
             //     .or_raise(|| PcboronError("could not add debug sphere to Pcboron".to_string()))?,
             polyhedron,
+            projections: Default::default(),
         };
 
         let mut res = Self {
@@ -196,31 +197,28 @@ impl Pcboron {
 
         for (i, polyhedron) in polyhedra.iter().enumerate() {
             info!("setting poly {i} to {polyhedron}");
+            // If this is a new pcbdron, create it
             if self.pcbdrons.len() == i {
-                let mut dron = Pcbdron::new(
-                    Polyhedron::load(sqlite, polyhedron).or_raise(|| {
-                        format!("Could not load {polyhedron:?}, which is the {i}th polyhedron")
-                            .into()
-                    })?,
-                    &mut variant_map,
-                );
-                debug!("variant map: {:?}", dron.variant_map);
-                // so this would also do nothing
+                let hedron = Polyhedron::load(sqlite, polyhedron).or_raise(|| {
+                    format!("Could not load {polyhedron:?}, which is the {i}th polyhedron").into()
+                })?;
+                let mut bdron = Pcbdron::new(hedron, &mut variant_map);
                 if path.get(i).is_none() || fail {
-                    dron.polyhedron.clear_path();
+                    bdron.polyhedron.clear_path();
                 } else {
-                    if let Err(_e) = dron.update_path(&path[i]) {
+                    // If there was a faulty path, mark error
+                    if let Err(_e) = bdron.update_path(&path[i]) {
                         fail = true;
                     }
                 }
-                self.pcbdrons.push(dron);
+                self.pcbdrons.push(bdron);
+            // otherwise, update the existing
             } else {
                 let PcbDrosign {
                     polyhedron: cpol,
                     variant_map: cmap,
                     path: cpath,
                 } = self.pcbdrons[i].get_design();
-
                 if polyhedron != &cpol {
                     // so here, it'd actually be better (I think?) or not?
                     self.pcbdrons[i].set_poly(
@@ -262,10 +260,22 @@ impl Pcboron {
             })
     }
 
+    /// transforms associated with this variant
+    ///
+    /// Basically pcb transforms, but filter-mapped to only be one [`PcbId`]
+    ///
+    /// used when adding pcbs and updating transforms. This is not a method
+    /// because in the latter case, we're also holding a `&mut` to other fields on `self`
     fn variant_transforms(pcbdrons: &[Pcbdron], pcb_id: PcbId) -> impl Iterator<Item = Mat4> {
         pcbdrons.iter().flat_map(move |p| {
             p.iter_variant(pcb_id)
-                .map(|idx| p.polyhedron.face_transforms[idx])
+                .filter(|&fidx| {
+                    true || *p.polyhedron.face_path_index[fidx]
+                        .get(0)
+                        .unwrap_or(&usize::MAX)
+                        < p.polyhedron.faces.len() / 2
+                })
+                .map(|idx| p.face_transform(idx))
         })
     }
 
@@ -389,10 +399,21 @@ impl Pcboron {
         // maybe we can also do that with an instancedmodel of an arrow?
 
         let instances = &mut self.path_instances;
-        instances.transformations.clear();
+        let transforms = &mut instances.transformations;
+        transforms.clear();
         let colors = instances.colors.as_mut().unwrap();
         colors.clear();
         for dron in &self.pcbdrons {
+            for (_, p) in &dron.projections {
+                info!("making arrow for projection {p:?}");
+                transforms.push(from_to_transform(
+                    p.point,
+                    p.point + p.arrow * p.dist,
+                    p.point.normalize().cross(Vec3::unit_z()),
+                ));
+                colors.push(Srgba::BLUE);
+            }
+
             let hedron = &dron.polyhedron;
 
             // we still want to clear everything on "no path"
@@ -426,7 +447,7 @@ impl Pcboron {
                     // aah...
                     // ehh...
                     //
-                    instances.transformations.push(from_to_transform(
+                    transforms.push(from_to_transform(
                         hedron.edge_centroid(*enter),
                         hedron.face_centroid(*face_idx),
                         hedron.face_normal(*face_idx),
@@ -446,20 +467,18 @@ impl Pcboron {
                         // just pick a slightly random vec and orthogonize
                         let mut z = hedron.face_transforms[*face_idx].x.truncate();
                         z -= z * z.dot((from - to).normalize());
-                        instances
-                            .transformations
-                            .push(from_to_transform(from, to, z));
+                        transforms.push(from_to_transform(from, to, z));
                     }
                 } else if i == 0 && VarFlags::Controller.has(dron.variant_map[*face_idx]) {
                     // for the first, just give the output arrow
-                    instances.transformations.push(from_to_transform(
+                    transforms.push(from_to_transform(
                         hedron.face_centroid(*face_idx),
                         hedron.edge_centroid(*exit),
                         hedron.face_normal(*face_idx),
                     ));
                 } else {
                     // point from edge to edge
-                    instances.transformations.push(from_to_transform(
+                    transforms.push(from_to_transform(
                         hedron.edge_centroid(*enter),
                         hedron.edge_centroid(*exit),
                         hedron.face_normal(*face_idx),
