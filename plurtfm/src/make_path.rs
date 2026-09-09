@@ -267,12 +267,28 @@ impl Polyhedron {
             return;
         };
 
-        if self.dfs(PolygonVisit {
+        info!(
+            "calling dfs from face {face_idx:?} which has{} been visited",
+            if self.face_path_index[face_idx].is_empty() {
+                "n't"
+            } else {
+                ""
+            }
+        );
+        let visit = PolygonVisit {
             face_idx,
             enter: self.edge_from_face(face_idx, 0),
-        }) {
-            self.update_transforms();
+        };
+        if self.face_path_index[face_idx].is_empty() {
+            if !self.dfs(visit) {
+                return;
+            }
+        } else {
+            if !self.revisit_dfs(visit) {
+                return;
+            }
         }
+        self.update_transforms();
     }
 
     /// Apply the given path, clearing the current one
@@ -531,8 +547,8 @@ impl Polyhedron {
 
         if !self.face_path_index[fidx].is_empty() {
             error!(
-                "should call revisit_dfs when revisiting {:?}",
-                self.edge_path
+                "should call revisit_dfs when revisiting face {fidx} has been visited {} times before",
+                self.face_path_index[fidx].len(),
             );
             return false;
         }

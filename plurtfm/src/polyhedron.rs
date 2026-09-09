@@ -370,20 +370,6 @@ impl Polyhedron {
         triangles
     }
 
-    pub fn cpu_mesh(&self) -> CpuMesh {
-        CpuMesh {
-            positions: Positions::F32(
-                self.vertices
-                    .iter()
-                    .copied()
-                    .map(|v| vec3(v[0], v[1], v[2]))
-                    .collect(),
-            ),
-            indices: Indices::U32(self.triangulate().into_iter().flatten().collect()),
-            ..Default::default()
-        }
-    }
-
     pub fn mean_r(&self) -> f32 {
         let centroid = self.vertices.iter().sum::<Vec3>() / self.vertices.len() as f32;
         self.vertices

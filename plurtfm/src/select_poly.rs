@@ -21,6 +21,7 @@ impl Interface {
                 index,
             )
             .map_err(|e| (*e).clone())?;
+        self.zoom_to_fit();
         self.render();
         Ok(MissingVariants(polyhedron, self.missing_variants()).into_ts()?)
     }
@@ -29,12 +30,14 @@ impl Interface {
         self.scene.pcboron.push_polyhedron(
             Polyhedron::load(&self.connection, &polyhedron).map_err(|e| (*e).clone())?,
         );
+        self.zoom_to_fit();
         self.render();
         Ok(MissingVariants(polyhedron, self.missing_variants()).into_ts()?)
     }
 
     pub fn pop_polyhedron(&mut self) {
         self.scene.pcboron.pop_polyhedron();
+        self.zoom_to_fit();
         self.render();
     }
 }

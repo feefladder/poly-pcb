@@ -141,6 +141,8 @@ pub struct Scene {
     pcboron: Pcboron,
 }
 
+const CAMERA_FOV: Radians = Rad(45.0f32.to_radians());
+
 #[wasm_bindgen]
 #[cfg(target_arch = "wasm32")]
 pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interface, JsValue> {
@@ -181,7 +183,7 @@ pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interf
         vec3(0.0, 4.0, 8.0),
         vec3(0.0, 0.0, 0.0),
         vec3(0.0, 1.0, 0.0),
-        degrees(45.0),
+        CAMERA_FOV,
         0.1,
         100.0,
     );
@@ -238,31 +240,44 @@ impl Interface {
         // compare the given design to our current design
 
         info!("applying design {design:?}");
-        let r = self
-            .scene
-            .pcboron
-            .pcbdrons()
-            .iter()
-            .map(|p| p.polyhedron.mean_r())
-            .max_by(|a, b| a.total_cmp(b))
-            .expect("have poly")
-            * 4.0;
-        self.scene.camera.set_zoom_factor(1.0 / r);
-
         let maybe_corrected = self
             .scene
             .pcboron
             .apply_design(design, &self.connection)
             .map_err(|e| JsError::new(&e.to_string()))?;
-        // do the zooming thing
-        // still need to figure out what is a good distance multiplier
-
+        self.zoom_to_fit();
         // self.update_instances()?;
         // so
         self.render();
         SetResult(self.missing_variants(), maybe_corrected)
             .into_ts()
             .map_err(Into::into)
+    }
+
+    pub fn zoom_to_fit(&mut self) {
+        // do the zooming thing
+        // still need to figure out what is a good distance multiplier
+        let Some(r) = self
+            .scene
+            .pcboron
+            .pcbdrons()
+            .iter()
+            .map(|p| p.polyhedron.mean_r())
+            .max_by(|a, b| a.total_cmp(b))
+        else {
+            return;
+        };
+        // so ideally we'd be able to get the distance from the camera and number of pixels on screen
+        // let min_pix = self.canvas.width().min(self.canvas.height());
+        // now get the zoom factor such that minimum pixels contains the circle
+        // so there's FOV involved now
+        // I'm slightly confused about the pixels and world-space units
+        // like, is 1px the same as 1 unit?
+        // e.g. a camera with 45 degree fov will have???
+        let projection = self.scene.camera.projection();
+        let scale = projection.x.x.min(projection.y.y);
+        let zoom = 0.4 / r / scale;
+        self.scene.camera.set_zoom_factor(zoom);
     }
 
     /// Load pcb gltfs into the simulation
@@ -275,24 +290,11 @@ impl Interface {
         data: Vec<u8>,
         name: &str,
     ) -> Result<(), JsError> {
-        info!(
-            "deserializing {name} from {:?}",
-            String::from_utf8_lossy(&data[..10])
-        );
         // add None for non-existent variants
         while self.pcbs[n_gon].len() <= variant {
             self.pcbs[n_gon].push(None);
         }
-        info!(
-            "deserializing {name} from {:?}",
-            String::from_utf8_lossy(&data[..10])
-        );
         let mut model: CpuModel = three_d_asset::io::deserialize(name, data)?;
-        info!(
-            "deserialized {name}, which has {} geometries",
-            model.geometries.len(),
-        );
-
         for prim in &mut model.geometries {
             if let CpuGeometry::Triangles(mesh) = &mut prim.geometry {
                 // kicad export specific stuff:
@@ -433,7 +435,6 @@ impl Interface {
                 }
             }
         }
-        info!("missing variants: {missing_variants:?}");
         missing_variants
     }
 }
