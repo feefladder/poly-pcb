@@ -5,7 +5,7 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use three_d::{Cull, InnerSpace, Mat3, Quat, Vec3, Viewport, Zero, pick};
 use tsify::{Ts, Tsify};
-use wasm_bindgen::{JsError, JsValue, convert::IntoWasmAbi, prelude::wasm_bindgen};
+use wasm_bindgen::{JsError, JsValue, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
 use crate::{Interface, Scene, VarId, pcboron::Fidx};
@@ -405,5 +405,6 @@ impl Interface {
         self.scene
             .camera
             .set_viewport(Viewport::new_at_origo(width, height));
+        self.render();
     }
 }

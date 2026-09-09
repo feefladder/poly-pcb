@@ -85,7 +85,7 @@ function update_url() {
             variants.map((v) => v.toString(16)).join(""),
         );
     }
-  let path = paths.map(path => `${path.start_ngon}.${path.start_nth}-${path.turns.map((t) => t.toString(16)).join("")}`).join("_");
+  let path = paths.map(path => `${path.start_ngon}.${path.start_nth}-${path.turns.map((t) => t.toString(36)).join("")}`).join("_");
   if (path) {
     params.set("path", path);
   }
@@ -129,7 +129,7 @@ function apply_url() {
             return {
                 start_ngon: Number(startNgon),
                 start_nth: Number(startNth),
-                turns: [...turns].map(c => parseInt(c, 16)),
+                turns: [...turns].map(c => parseInt(c, 36)),
             };
         });
     }
@@ -168,11 +168,10 @@ onMounted(async () => {
 
     const ro = new ResizeObserver(() => {
         iface.on_resize();
-        iface.render();
     });
     ro.observe(canvas.value);
-  apply_url();
-        window.addEventListener("keydown", event => iface?.on_key(event));
+    apply_url();
+    window.addEventListener("keydown", event => iface?.on_key(event));
 });
 
 onUnmounted(async () => {
@@ -405,7 +404,6 @@ function start_animation() {
             @pointerup="iface?.on_pointer_up"
             @wheel.prevent="iface?.on_wheel"
             @click="iface?.on_click"
-            @dblclick="iface?.next_polyhedron"
 
             @design_changed="
                 (e: CustomEventInit<PcBorsign>) => (design = e.detail!)

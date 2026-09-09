@@ -14,9 +14,10 @@ use three_d::{
 
 use crate::{
     PcbId, VarFlags, VarId,
-    design::{PcBorsign, PcbDrosign, PcbPaths, VariantMap},
+    design::{PcBorsign, PcbDrosign, VariantMap},
+    make_path::PolygonCrossing,
     pcbdron::Pcbdron,
-    polyhedron::{PolygonCrossing, Polyhedron},
+    polyhedron::Polyhedron,
 };
 
 /// [`Pcboron`] can be rendered as self-contained something
@@ -28,7 +29,7 @@ pub struct Pcboron {
     /// A linear list of pcbdrons
     ///
     /// The path will follow this order
-    pcbdrons: Vec<Pcbdron>,
+    pub(crate) pcbdrons: Vec<Pcbdron>,
     /// The actual pcbs, including their transforms
     ///
     /// These are InstancedModels to support multi-mesh gltf pcbs
@@ -48,13 +49,6 @@ pub struct Pcboron {
     ///
     /// This is a simple instancedmesh
     path_gm: Gm<InstancedMesh, ColorMaterial>,
-    // /// The number of unvisited faces in each pcbdron's path
-    // ///
-    // /// Not sure if I like this though, maybe just have a boolean?
-    // /// because...
-    // /// well, the pcbdron doesn't know if it's path is completed
-    // /// also it doesn't really care, in theory a path could like jump faces and such
-    // unpathed_faces: Vec<usize>,
 }
 
 #[derive(Debug, Display, Clone)]
@@ -89,11 +83,7 @@ impl Pcboron {
         &self.path_gm
     }
 
-    pub fn pcbdrons_mut(&mut self) -> impl Iterator<Item = &mut Pcbdron> {
-        self.pcbdrons.iter_mut()
-    }
-
-    /// from geometry_id, instance_id, get face id
+    /// from geometry_id, instance_id, get nth variant
     pub fn pick(&self, geometry_id: u32, instance_id: u32) -> Option<VarId> {
         let id = geometry_id as usize;
 
@@ -109,61 +99,6 @@ impl Pcboron {
             nth_ngon: instance_id as usize,
             pcb_id,
         });
-        // find which geometry corresponds to which model
-        //
-        // since models can have multiple geometries, need subtract len in stead
-        // of just iterating
-        for (model_idx, geometries) in self.pcb_models.iter().enumerate() {
-            if id < geometries.len() {
-                // here model_idx is what we want, no need to find which face
-                // now need to get from model_idx -> PcbId{n_gon, variant},
-                // so then we can use instance_id to find polyhedron face
-                // and that's actually exactly what instance_map does
-                let Some(pcb_id) = self.instance_map.get(model_idx) else {
-                    info!(
-                        "model idx {model_idx} no in instance map {:?}",
-                        self.instance_map
-                    );
-                    return None;
-                };
-
-                // now need find nth
-                //
-                // this function needs to be kept in sync with update_instances
-                // machinery:
-                //
-                //
-                // what is going on?
-                // the pick returns a model id, instance id.
-                // from model id, we get pcb_id
-                // in case of multiple pcbdrons, we chain them together
-                //
-                // and the instance_id needs to be retrievable by just going
-                // in-order over the variants
-                return Some(VarId {
-                    nth_ngon: instance_id as usize,
-                    pcb_id: *pcb_id,
-                });
-            }
-            id -= geometries.len();
-        }
-        None
-    }
-
-    /// removes all pcbdrons and sets it to this single one
-    ///
-    /// simple function before adding more complexity
-    pub fn set_pcbdron(
-        &mut self,
-        polyhedron: Polyhedron,
-        variant_map: &mut VariantMap,
-        nth: usize,
-    ) -> exn::Result<(), PcboronError> {
-        self.pcbdrons[nth].set_poly(polyhedron, variant_map);
-        self.update_debug_path();
-        // so we do set new faces here, but not change/update old ones?
-        self.update_instances();
-        Ok(())
     }
 
     /// Create a new Pcboron from a polyhedron, variant map and pcbs
@@ -233,20 +168,6 @@ impl Pcboron {
             }
         }
         Ok(res)
-    }
-
-    pub fn push_polyhedron(&mut self, polyhedron: Polyhedron) {
-        self.pcbdrons
-            .push(Pcbdron::new(polyhedron, &mut VariantMap::new()));
-        self.update_instances();
-        self.update_debug_path();
-    }
-
-    pub fn pop_polyhedron(&mut self) -> Option<Pcbdron> {
-        let p = self.pcbdrons.pop();
-        self.update_instances();
-        self.update_debug_path();
-        p
     }
 
     /// Apply a [`PcBorsign`]
@@ -404,92 +325,6 @@ impl Pcboron {
         }
     }
 
-    pub fn complete_path(&mut self) {
-        if let Some(todron) = self.pcbdrons.iter_mut().find(|p| {
-            !p.polyhedron.edge_path.is_empty() && !p.polyhedron.path_complete_questionmark()
-        }) {
-            todron.polyhedron.complete_path();
-            self.update_instances();
-            self.update_debug_path();
-        }
-    }
-
-    /// Add a face to the path
-    /// face indices are local and based on the
-    pub fn add_face_to_path(&mut self, varid: VarId) -> Option<VarId> {
-        let Some((fidx, pidx)) = self
-            .pcbdrons
-            .iter()
-            .enumerate()
-            .flat_map(|(i, p)| p.iter_variant(varid.pcb_id).zip(iter::repeat(i)))
-            .nth(varid.nth_ngon)
-        else {
-            return None;
-        };
-        info!("adding face {fidx} to dron {pidx}");
-        let res = if let Some(cidx) = self.pcbdrons[pidx].polyhedron.add_face_to_path(fidx)
-            && pidx == 0
-        {
-            self.pcbdrons[0].set_controller(cidx)
-        } else {
-            None
-        };
-        self.update_instances();
-        self.update_debug_path();
-        res
-    }
-
-    /// pop the last index from the path
-    ///
-    /// somethingsomething about needing a linear path
-    /// so even if a path has multiple like pcbdrons, it's still not allowed to be patchy
-    pub fn pop_path(&mut self) -> Option<Fidx> {
-        if let Some((dridx, activedron)) = self
-            .pcbdrons
-            .iter_mut()
-            .enumerate()
-            .rfind(|(_i, dron)| !dron.polyhedron.edge_path.is_empty())
-        {
-            let res = activedron
-                .polyhedron
-                .pop_path()
-                .map(|fidx| Fidx { fidx, dridx });
-            self.update_debug_path();
-            res
-        } else {
-            None
-        }
-    }
-
-    pub fn path_jump(&mut self, jumps: usize) -> Option<VarId> {
-        let mut res = None;
-        if let Some(i) = self
-            .pcbdrons
-            .iter()
-            .enumerate()
-            .position(|(_i, dron)| !dron.polyhedron.path_complete_questionmark())
-        {
-            let activedron = &mut self.pcbdrons[i];
-            info!("working path on {i}:{:?}", activedron.polyhedron.name);
-            if let Some(fidx) = activedron.polyhedron.path_jump(jumps)
-                && i == 0
-            {
-                res = activedron.set_controller(fidx);
-            }
-        }
-        self.update_instances();
-        self.update_debug_path();
-        res
-    }
-
-    pub fn get_path(&self) -> PcbPaths {
-        self.pcbdrons
-            .iter()
-            .flat_map(|d| d.current_path())
-            .collect::<Vec<_>>()
-            .into()
-    }
-
     fn nth_ngon(&self, ngon: usize, nth_ngon: usize) -> Option<(usize, usize)> {
         self.pcbdrons
             .iter()
@@ -628,12 +463,18 @@ impl Pcboron {
         self.path_gm.set_instances(&self.path_instances);
     }
 
+    /// Iterate only over the bodies of the board
+    ///
+    /// Kind of hacky depending on the index of the board body in the gltfs from kicad exports
+    ///
+    /// but it works, eh?
     pub fn body_iter(&self) -> impl Iterator<Item = &dyn Object> {
         self.pcb_models
             .iter()
             .flat_map(|pm| iter::once(&pm[2] as &dyn Object))
     }
 
+    /// Iterate over all modelparts
     pub fn into_iter(&self) -> impl Iterator<Item = &dyn Object> {
         self.pcb_models.iter().flat_map(|pm| pm.into_iter())
     }

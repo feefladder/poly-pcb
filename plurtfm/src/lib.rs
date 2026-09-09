@@ -25,11 +25,16 @@ use web_sys::HtmlCanvasElement;
 use web_sys::{CustomEvent, CustomEventInit};
 
 mod design;
+
 mod pcbdron;
 mod pcboron;
 mod polyhedron;
 #[cfg(target_arch = "wasm32")]
 mod ui;
+
+mod assign_variants;
+mod make_path;
+mod select_poly;
 
 #[derive(Tsify, Serialize)]
 pub struct SetResult(pub Vec<Vec<usize>>, pub Option<PcBorsign>);
@@ -137,12 +142,6 @@ pub struct Scene {
 }
 
 #[wasm_bindgen]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PlurEvent {
-    PolyhedronChanged(String),
-}
-
-#[wasm_bindgen]
 #[cfg(target_arch = "wasm32")]
 pub fn init_iface(canvas: HtmlCanvasElement, db_bytes: Vec<u8>) -> Result<Interface, JsValue> {
     // Set up panic hook for better error messages in the browser
@@ -234,63 +233,6 @@ impl Interface {
         Ok(())
     }
 
-    pub fn animate(&mut self, timestamp: f64) -> bool {
-        self.tweens
-            .retain_mut(|tween| tween.update(&mut self.scene, timestamp));
-        self.render();
-        !self.tweens.is_empty()
-    }
-
-    pub fn render(&mut self) {
-        // actually draw something?
-        let screen = RenderTarget::screen(&self.context, self.canvas.width(), self.canvas.height());
-        screen
-            .clear(ClearState::color_and_depth(0.1, 0.1, 0.2, 1.0, 1.0))
-            .render(
-                &self.scene.camera,
-                self.scene
-                    .pcboron
-                    .into_iter()
-                    .chain(&*self.scene.pcboron.debug_path()),
-                &self
-                    .scene
-                    .lights
-                    .iter()
-                    .map(|l| l.as_ref())
-                    .collect::<Vec<_>>(),
-            );
-    }
-
-    pub fn set_polyhedron(
-        &mut self,
-        polyhedron: String,
-        index: usize,
-    ) -> Result<Ts<MissingVariants>, JsError> {
-        self.scene
-            .pcboron
-            .set_pcbdron(
-                Polyhedron::load(&self.connection, &polyhedron).map_err(|e| (*e).clone())?,
-                &mut Vec::new(),
-                index,
-            )
-            .map_err(|e| (*e).clone())?;
-        self.render();
-        Ok(MissingVariants(polyhedron, self.missing_variants()).into_ts()?)
-    }
-
-    pub fn push_polyhedron(&mut self, polyhedron: String) -> Result<Ts<MissingVariants>, JsError> {
-        self.scene.pcboron.push_polyhedron(
-            Polyhedron::load(&self.connection, &polyhedron).map_err(|e| (*e).clone())?,
-        );
-        self.render();
-        Ok(MissingVariants(polyhedron, self.missing_variants()).into_ts()?)
-    }
-
-    pub fn pop_polyhedron(&mut self) {
-        self.scene.pcboron.pop_polyhedron();
-        self.render();
-    }
-
     pub fn apply_design(&mut self, ts_design: Ts<PcBorsign>) -> Result<Ts<SetResult>, JsError> {
         let design = ts_design.to_rust()?;
         // compare the given design to our current design
@@ -323,7 +265,7 @@ impl Interface {
             .map_err(Into::into)
     }
 
-    /// Load pcb stls into the simulation
+    /// Load pcb gltfs into the simulation
     ///
     /// loading and kicad quirks are handled here, then it's passed to pcbdrons
     pub fn add_pcb(
@@ -401,16 +343,6 @@ impl Interface {
             .pcboron
             .add_pcb(&self.context, PcbId { n_gon, variant }, &model)
             .map_err(|e| JsError::new(&e.to_string()))?;
-        // register the stl in self, so we can reference it
-        // self.instance_map
-        //     .insert(PcbId { n_gon, variant }, self.instances.len());
-        // self.instances.push(Instances::default());
-        // let instanced_pcb = InstancedModel::new(
-        //     &self.context,
-        //     &self.instances[self.instances.len() - 1],
-        //     &model,
-        // )?;
-        // self.scene.instanced_pcbs.push(instanced_pcb);
 
         // not sure why keep this around?
         self.pcbs[n_gon][variant] = Some(model);
@@ -419,89 +351,46 @@ impl Interface {
         Ok(())
     }
 
-    pub fn complete_path(&mut self) {
-        self.scene.pcboron.complete_path();
+    pub fn animate(&mut self, timestamp: f64) -> bool {
+        self.tweens
+            .retain_mut(|tween| tween.update(&mut self.scene, timestamp));
         self.render();
-        self.notify_update_path();
+        !self.tweens.is_empty()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl Interface {
+    pub fn render(&mut self) {
+        // actually draw something?
+        let screen = RenderTarget::screen(&self.context, self.canvas.width(), self.canvas.height());
+        screen
+            .clear(ClearState::color_and_depth(0.2, 0.2, 0.4, 1.0, 1.0))
+            .render(
+                &self.scene.camera,
+                self.scene
+                    .pcboron
+                    .into_iter()
+                    .chain(&*self.scene.pcboron.debug_path()),
+                &self
+                    .scene
+                    .lights
+                    .iter()
+                    .map(|l| l.as_ref())
+                    .collect::<Vec<_>>(),
+            );
     }
 
-    pub fn pop_path(&mut self) {
-        if let Some(fidx) = self.scene.pcboron.pop_path() {
-            self.add_tween(Tween::new(
-                500.0,
-                Animation::orbit_to_face(&self.scene, fidx),
-            ));
-
-            self.notify_update_path();
+    pub fn add_tween(&mut self, tween: Tween) {
+        // ah ok
+        if !self.tweens.is_empty() {
+            self.tweens.push(tween);
+        } else {
+            self.tweens.push(tween);
+            self.canvas
+                .dispatch_event(&CustomEvent::new("start_animation").unwrap())
+                .unwrap();
         }
-        self.render();
-    }
-
-    pub fn path_jump(&mut self, i: usize) {
-        if let Some(var_id) = self.scene.pcboron.path_jump(i) {
-            // so now
-            self.maybe_request_variant(var_id);
-        }
-        self.render();
-        self.notify_update_path();
-    }
-
-    pub fn update_variant(&mut self, VarId { nth_ngon, pcb_id }: VarId) {
-        self.scene
-            .pcboron
-            .set_variant(pcb_id.n_gon, nth_ngon, pcb_id.variant);
-        self.render();
-    }
-
-    pub fn set_variant(&mut self, varid: VarId, new_var: usize) {
-        // set the face to the variant
-        let Some(f_idx) = self.scene.pcboron.varid_to_fidx(varid) else {
-            warn!("Could not find face idx for {varid:?}");
-            return;
-        };
-        let n_gon = varid.pcb_id.n_gon;
-        let Some(nth_ngon) = self
-            .scene
-            .pcboron
-            .pcbdrons()
-            .iter()
-            .enumerate()
-            .flat_map(|(i, p)| p.polyhedron.iter_ngon(n_gon).zip(iter::repeat(i)))
-            .position(|(fidx, dridx)| Fidx { dridx, fidx } == f_idx)
-        else {
-            warn!("could not find nth_ngon for {f_idx:?}");
-            return;
-        };
-        self.scene.pcboron.put_variant(varid, new_var);
-        self.maybe_request_variant(VarId {
-            nth_ngon,
-            pcb_id: PcbId {
-                n_gon,
-                variant: new_var,
-            },
-        });
-        self.render();
-    }
-
-    fn maybe_request_variant(&self, var_id: VarId) {
-        // so there's some shenanigans that happened in the refactor and it'd really be better to solve them earlier, but idk, so here's some uglyness
-        //
-        // so the problem is that varid changed it's meaning from nth ngon to nth variant
-        // so that's sad and the ui really likes nth ngon, but idk how to get there?
-        info!("requesting {var_id:?}");
-        let e_detail = CustomEventInit::new();
-        e_detail.set_detail(&var_id.into());
-        self.canvas
-            .dispatch_event(
-                &CustomEvent::new_with_event_init_dict("update_variant", &e_detail).unwrap(),
-            )
-            .unwrap();
-    }
-
-    /// Send an update not
-    fn notify_update_path(&self) -> Result<(), JsError> {
-        let path = self.scene.pcboron.get_path();
-        self.event("update_path", path)
     }
 
     fn event<T: Tsify + Serialize>(&self, name: &str, detail: T) -> Result<(), JsError> {
@@ -515,21 +404,6 @@ impl Interface {
         self.canvas
             .dispatch_event(&CustomEvent::new_with_event_init_dict(name, &e_detail).unwrap())
             .unwrap();
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-impl Interface {
-    pub fn add_tween(&mut self, tween: Tween) {
-        // ah ok
-        if !self.tweens.is_empty() {
-            self.tweens.push(tween);
-        } else {
-            self.tweens.push(tween);
-            self.canvas
-                .dispatch_event(&CustomEvent::new("start_animation").unwrap())
-                .unwrap();
-        }
     }
 }
 
@@ -562,45 +436,4 @@ impl Interface {
         info!("missing variants: {missing_variants:?}");
         missing_variants
     }
-
-    // we don't manually update instances, but keep them up-to-date when adding pcbs
-    // or changing variant? Not there yet... In any case, that'd be a Pcboron thing
-    // pub fn update_instances(&mut self) -> Result<(), JsError> {
-    //     let mut fallback_mesh = CpuMesh::sphere(8);
-    //     fallback_mesh.transform(Mat4::from_scale(0.1))?;
-    //     // just iterate through the map
-    //     for (pcb_id, instance_idx) in &self.instance_map {
-    //         let transformations: Vec<Mat4> = self
-    //             .polyhedron
-    //             .face_transforms
-    //             .iter()
-    //             .enumerate()
-    //             .filter(|(i, _)| {
-    //                 self.polyhedron.faces[*i].len() == pcb_id.n_gon
-    //                     && self.face_variant_mapping[*i] == pcb_id.variant
-    //             })
-    //             .map(|(_, tr)| *tr)
-    //             .collect();
-    //         if true {
-    //             self.instances[*instance_idx].colors = None;
-    //         } else {
-    //             // debug colors
-    //             self.instances[*instance_idx].colors = Some(
-    //                 (0..transformations.len())
-    //                     .map(|i| {
-    //                         let c = VIRIDIS.eval_rational(i, transformations.len());
-    //                         Srgba::new_opaque(c.r, c.g, c.b)
-    //                     })
-    //                     .collect(),
-    //             );
-    //         }
-    //         self.instances[*instance_idx].transformations = transformations;
-
-    //         self.scene.instanced_pcbs[*instance_idx]
-    //             .iter_mut()
-    //             .for_each(|mp| mp.geometry.set_instances(&self.instances[*instance_idx]));
-    //     }
-    //     self.render();
-    //     Ok(())
-    // }
 }
