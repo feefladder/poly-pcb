@@ -254,32 +254,6 @@ impl Interface {
             .map_err(Into::into)
     }
 
-    pub fn zoom_to_fit(&mut self) {
-        // do the zooming thing
-        // still need to figure out what is a good distance multiplier
-        let Some(r) = self
-            .scene
-            .pcboron
-            .pcbdrons()
-            .iter()
-            .map(|p| p.polyhedron.mean_r())
-            .max_by(|a, b| a.total_cmp(b))
-        else {
-            return;
-        };
-        // so ideally we'd be able to get the distance from the camera and number of pixels on screen
-        // let min_pix = self.canvas.width().min(self.canvas.height());
-        // now get the zoom factor such that minimum pixels contains the circle
-        // so there's FOV involved now
-        // I'm slightly confused about the pixels and world-space units
-        // like, is 1px the same as 1 unit?
-        // e.g. a camera with 45 degree fov will have???
-        let projection = self.scene.camera.projection();
-        let scale = projection.x.x.min(projection.y.y);
-        let zoom = 0.4 / r / scale;
-        self.scene.camera.set_zoom_factor(zoom);
-    }
-
     /// Load pcb gltfs into the simulation
     ///
     /// loading and kicad quirks are handled here, then it's passed to pcbdrons
@@ -436,5 +410,75 @@ impl Interface {
             }
         }
         missing_variants
+    }
+
+    pub fn zoom_to_fit(&mut self) {
+        // do the zooming thing
+        // still need to figure out what is a good distance multiplier
+        let Some(r) = self
+            .scene
+            .pcboron
+            .pcbdrons()
+            .iter()
+            .map(|p| p.polyhedron.mean_r())
+            .max_by(|a, b| a.total_cmp(b))
+        else {
+            return;
+        };
+        // so ideally we'd be able to get the distance from the camera and number of pixels on screen
+        // let min_pix = self.canvas.width().min(self.canvas.height());
+        // now get the zoom factor such that minimum pixels contains the circle
+        // so there's FOV involved now
+        // I'm slightly confused about the pixels and world-space units
+        // like, is 1px the same as 1 unit?
+        // e.g. a camera with 45 degree fov will have???
+        // so the below function links to:
+        // https://registry.khronos.org/OpenGL-Refpages/gl2.1/xhtml/gluPerspective.xml
+        // f/aspect 0 0 0
+        // 0 f 0 0
+        // where f = cot(fovy/2) = 1/tan(fovy/2)
+        // and aspect = width/height
+        // but what I'm thinking is that this should still give like...
+        // ehh...
+        // so x' = x * cot(fovy/2) / aspect = x*cot(fovy/2) * height/width
+        // and we want to find z
+        // there is no z in the perspective matrix...
+        // because it's like the view frustrum definition matrix, ah ok
+        // so.... ehh....
+        // well, here: https://www.scratchapixel.com/lessons/3d-basic-rendering/perspective-and-orthographic-projection-matrix//opengl-perspective-projection-matrix.html
+        // they also do this thing where
+        // okok, let's just 2n/(r-l)
+        // but anyways, in case the screen is portrait:
+        // aspect > 1; landscape => aspect < 1
+        // and the y-value doesn't change? I guess that means that the...
+        // so the fov angle is fovy, regardless of aspect
+        // so that means
+        // and uses fovy, which is vertical fov
+        // so I'd say we have to do the minimum f,
+        let aspect = self.scene.camera.viewport().aspect();
+        let projection = self.scene.camera.projection();
+        // so for some reason, the below doesn't work fully
+        // I think because like...
+        // let scale = projection.y.y;
+        // and if aspect > 1, we need to correct because otherwise it'll clip the edges
+        // sooo.... ehh....
+
+        // let scale = if aspect > 1.0 {
+        //     projection.y.y / aspect // == projection.x.x
+        // } else {
+        //     projection.y.y
+        // };
+        let scale = projection.y.y.max(projection.x.x);
+        // which is equivalent to:
+        let s = if aspect < 1.0 {
+            projection.x.x // ==  projection.y.y / aspect
+        } else {
+            projection.y.y
+        };
+        assert_eq!(scale, s);
+        // which is basically the same as taking the min value?
+        // except... somethni
+        let zoom = 0.8 / r / scale;
+        self.scene.camera.set_zoom_factor(zoom);
     }
 }

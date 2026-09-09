@@ -405,6 +405,7 @@ impl Interface {
         self.scene
             .camera
             .set_viewport(Viewport::new_at_origo(width, height));
+        self.zoom_to_fit();
         self.render();
     }
 }
