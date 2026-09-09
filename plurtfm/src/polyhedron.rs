@@ -652,6 +652,13 @@ impl Polyhedron {
         self.edge_path.last().map(|cr| cr.face_idx)
     }
 
+    pub fn clear_path(&mut self) {
+        self.edge_path.clear();
+        for f in &mut self.face_path_index {
+            f.clear()
+        }
+    }
+
     pub fn push(&mut self, v: PolygonVisit) {
         self.face_path_index[v.face_idx].push(self.edge_path.len());
         self.edge_path.push(v.exit(Edge::dev()));

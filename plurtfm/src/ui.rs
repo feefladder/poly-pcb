@@ -171,11 +171,22 @@ impl Interface {
                 self.next_polyhedron();
             }
             "Backspace" => match self.current_step {
-                CurrentStep::SelectPoly => self.pop_polyhedron(),
+                CurrentStep::SelectPoly => {
+                    self.pop_polyhedron();
+                    self.js_ev("pop_polyhedron", JsValue::null());
+                }
                 CurrentStep::MakePath => self.pop_path(),
                 _ => {}
             },
             "Enter" => match self.current_step {
+                CurrentStep::SelectPoly => {
+                    self.current_step = CurrentStep::AssignVariants(0);
+                    self.event("update_step", self.current_step).ok();
+                }
+                CurrentStep::AssignVariants(_) => {
+                    self.current_step = CurrentStep::MakePath;
+                    self.event("update_step", self.current_step).ok();
+                }
                 CurrentStep::MakePath => {
                     self.complete_path();
                 }

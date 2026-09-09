@@ -242,10 +242,11 @@ impl Pcboron {
         self.update_debug_path();
     }
 
-    pub fn pop_polyhedron(&mut self) {
-        self.pcbdrons.pop();
+    pub fn pop_polyhedron(&mut self) -> Option<Pcbdron> {
+        let p = self.pcbdrons.pop();
         self.update_instances();
         self.update_debug_path();
+        p
     }
 
     /// Apply a [`PcBorsign`]
@@ -303,7 +304,7 @@ impl Pcboron {
             }
             // so this would also do nothing
             if path.get(i).is_none() || fail {
-                self.pcbdrons[0].polyhedron.edge_path.clear();
+                self.pcbdrons[0].polyhedron.clear_path();
             } else if Some(&path[i]) != cpath.as_ref() {
                 if let Err(e) = self.pcbdrons[i].update_path(&path[i]) {
                     fail = true;

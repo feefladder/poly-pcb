@@ -1,7 +1,7 @@
 use std::{iter, sync::Arc};
 
 #[cfg(target_arch = "wasm32")]
-use crate::{design::PcBorsign, pcboron::Fidx};
+use crate::{design::PcBorsign, pcbdron::Pcbdron, pcboron::Fidx};
 use crate::{
     design::VariantMap,
     pcboron::Pcboron,
@@ -505,12 +505,15 @@ impl Interface {
     }
 
     fn event<T: Tsify + Serialize>(&self, name: &str, detail: T) -> Result<(), JsError> {
+        Ok(self.js_ev(name, detail.into_ts()?.js_value()))
+    }
+
+    fn js_ev(&self, name: &str, d: JsValue) {
         let e_detail = CustomEventInit::new();
-        e_detail.set_detail(&detail.into_ts()?.js_value());
+        e_detail.set_detail(&d);
         self.canvas
             .dispatch_event(&CustomEvent::new_with_event_init_dict(name, &e_detail).unwrap())
             .unwrap();
-        Ok(())
     }
 }
 

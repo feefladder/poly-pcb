@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, type Ref, computed } from "vue";
+import { ref, onMounted, watch, type Ref, computed, onUnmounted } from "vue";
 import {
     type CurrentStep,
     Interface,
@@ -37,12 +37,18 @@ const design = ref<PcBorsign>({
 let iface: Interface;
 const allSteps: Ref<CurrentStep[]> = ref([]);
 const allVariants: Ref<VarFlags[]> = ref([]);
-const currentStep = computed<CurrentStep | undefined>(() => {
-  if (mode.value === 1) {
-    return { AssignVariants: currentVar.value };
-  } else {
-    return allSteps.value[mode.value];
-}
+const currentStep = computed<CurrentStep | undefined>({
+  get() {
+    if (mode.value === 1) {
+      return { AssignVariants: currentVar.value };
+    } else {
+      return allSteps.value[mode.value];
+    }
+  },
+    set(step) {
+        mode.value = allSteps.value.findIndex(s => s === step || (typeof step === 'object' && 'AssignVariants' in step && typeof s === 'object' && 'AssignVariants' in s));
+
+    }
 });
 const currentVariant: Ref<number[]> = ref([]);
 
@@ -108,25 +114,26 @@ function apply_url() {
         entries.push([Number(nGon), [...encoded].map((c) => parseInt(c, 16))]);
     }
 
-    const encodedPath = params.get("path");
-
-    if (encodedPath !== null) {
-        const match = encodedPath.match(/^(\d+)\.(\d+)(?:-(.*))?$/);
-
-        if (match) {
-            const [, startNgon, startNth, turns = ""] = match;
-
-            design.value.path = [{
-                start_ngon: Number(startNgon),
-                start_nth: Number(startNth),
-                turns: [...turns].map((c) => parseInt(c, 16)),
-            }];
-        }
-    }
 
     if (entries.length > 0 && entries !== design.value.variant_map) {
         design.value.variant_map = entries;
     }
+
+    const encodedPath = params.get("path");
+
+    if (encodedPath !== null) {
+        design.value.path = encodedPath.split("_").map(encoded => {
+            const [startNgon, startNthAndTurns] = encoded.split(".");
+            const [startNth, turns = ""] = startNthAndTurns!.split("-");
+
+            return {
+                start_ngon: Number(startNgon),
+                start_nth: Number(startNth),
+                turns: [...turns].map(c => parseInt(c, 16)),
+            };
+        });
+    }
+
 
     if (
         polyhedra
@@ -164,8 +171,13 @@ onMounted(async () => {
         iface.render();
     });
     ro.observe(canvas.value);
-    apply_url();
+  apply_url();
+        window.addEventListener("keydown", event => iface?.on_key(event));
 });
+
+onUnmounted(async () => {
+      window.removeEventListener("keydown", event => iface?.on_key(event));
+})
 
 // this is sad because it's now bidirectional:
 // 1. update url based on design
@@ -217,12 +229,17 @@ function push_polyhedron(polyhedron: string) {
   pcbLoader.value!.requestMany(iface.push_polyhedron(polyhedron)![1]);
 }
 
-function pop_polyhedron() {
+function do_pop_polyhedron() {
   if (!iface) {
     return;
   }
-  design.value.polyhedra.pop();
+  pop_polyhedron();
   iface.pop_polyhedron();
+}
+
+function pop_polyhedron() {
+  console.log("popping poly");
+  design.value.polyhedra.pop();
 }
 
 function on_update_polyhedron(missing_variants: MissingVariants, index: number) {
@@ -319,7 +336,7 @@ function start_animation() {
                     </button>
 
                     <div v-if="step === 'SelectPoly' && mode === i" class="polyhedron-selects">
-                        <button v-if="design.polyhedra.length > 0" @click="pop_polyhedron()">-</button>
+                        <button v-if="design.polyhedra.length > 0" @click="do_pop_polyhedron()">-</button>
                         <select
                             v-for="(name, j) in design.polyhedra"
                             :key="j"
@@ -383,27 +400,33 @@ function start_animation() {
         <canvas
             ref="canvas"
             tabindex="0"
-            @keydown="iface.on_key"
-            @next_polyhedron="(e: CustomEventInit<MissingVariants>) => {on_update_polyhedron(e.detail!, 0)}"
-            @update_current_var="(e: CustomEventInit<number>) => { currentVar = e.detail! }"
-            @update_variant="
-                (e: CustomEventInit<VarId>) => {
-                    on_update_variant(e.detail!);
-                }
-            "
-            @update_path="(e: CustomEventInit<PcbPaths>) => {
-              on_update_path(e.detail);
-            } "
-            @design_changed="
-                (e: CustomEventInit<PcBorsign>) => (design = e.detail!)
-            "
-            @start_animation="(e:CustomEventInit<number>) => (start_animation())"
             @pointerdown="iface?.on_pointer_down"
             @pointermove="iface?.on_pointer_move"
             @pointerup="iface?.on_pointer_up"
             @wheel.prevent="iface?.on_wheel"
             @click="iface?.on_click"
             @dblclick="iface?.next_polyhedron"
+
+            @design_changed="
+                (e: CustomEventInit<PcBorsign>) => (design = e.detail!)
+            "
+            @next_polyhedron="(e: CustomEventInit<MissingVariants>) => {on_update_polyhedron(e.detail!, 0)}"
+            @pop_polyhedron="pop_polyhedron()"
+            @update_step="(e: CustomEventInit<CurrentStep>) => currentStep = e.detail!"
+
+            @update_current_var="(e: CustomEventInit<number>) => { currentVar = e.detail! }"
+            @update_variant="
+                (e: CustomEventInit<VarId>) => {
+                    on_update_variant(e.detail!);
+                }
+            "
+
+            @update_path="(e: CustomEventInit<PcbPaths>) => {
+              on_update_path(e.detail);
+            } "
+
+            @start_animation="(e:CustomEventInit<number>) => (start_animation())"
+
         ></canvas>
     </div>
 </template>
