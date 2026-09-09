@@ -5,7 +5,7 @@ use std::{
 
 use derive_more::Display;
 use exn::ResultExt;
-use log::info;
+use log::{debug, info};
 use rusqlite::Connection;
 use three_d::{
     ColorMaterial, Context, CpuMaterial, CpuMesh, CpuModel, Gm, InstancedMesh, InstancedModel,
@@ -197,40 +197,51 @@ impl Pcboron {
         for (i, polyhedron) in polyhedra.iter().enumerate() {
             info!("setting poly {i} to {polyhedron}");
             if self.pcbdrons.len() == i {
-                self.pcbdrons.push(Pcbdron::new(
+                let mut dron = Pcbdron::new(
                     Polyhedron::load(sqlite, polyhedron).or_raise(|| {
                         format!("Could not load {polyhedron:?}, which is the {i}th polyhedron")
                             .into()
                     })?,
                     &mut variant_map,
-                ));
-            }
-
-            let PcbDrosign {
-                polyhedron: cpol,
-                variant_map: cmap,
-                path: cpath,
-            } = self.pcbdrons[i].get_design();
-
-            if polyhedron != &cpol {
-                // so here, it'd actually be better (I think?) or not?
-                self.pcbdrons[i].set_poly(
-                    Polyhedron::load(sqlite, polyhedron).or_raise(|| {
-                        format!("could not apply design for poly {}", polyhedron).into()
-                    })?,
-                    &mut variant_map,
                 );
-            } else if variant_map != cmap {
-                self.pcbdrons[i].apply_variant_map(&mut variant_map);
+                debug!("variant map: {:?}", dron.variant_map);
+                // so this would also do nothing
+                if path.get(i).is_none() || fail {
+                    dron.polyhedron.clear_path();
+                } else {
+                    if let Err(_e) = dron.update_path(&path[i]) {
+                        fail = true;
+                    }
+                }
+                self.pcbdrons.push(dron);
+            } else {
+                let PcbDrosign {
+                    polyhedron: cpol,
+                    variant_map: cmap,
+                    path: cpath,
+                } = self.pcbdrons[i].get_design();
+
+                if polyhedron != &cpol {
+                    // so here, it'd actually be better (I think?) or not?
+                    self.pcbdrons[i].set_poly(
+                        Polyhedron::load(sqlite, polyhedron).or_raise(|| {
+                            format!("could not apply design for poly {}", polyhedron).into()
+                        })?,
+                        &mut variant_map,
+                    );
+                } else {
+                    self.pcbdrons[i].apply_variant_map(&mut variant_map);
+                }
+                // so this would also do nothing
+                if path.get(i).is_none() || fail {
+                    self.pcbdrons[0].polyhedron.clear_path();
+                } else if Some(&path[i]) != cpath.as_ref()
+                    && let Err(_e) = self.pcbdrons[i].update_path(&path[i])
+                {
+                    fail = true;
+                }
             }
-            // so this would also do nothing
-            if path.get(i).is_none() || fail {
-                self.pcbdrons[0].polyhedron.clear_path();
-            } else if Some(&path[i]) != cpath.as_ref()
-                && let Err(_e) = self.pcbdrons[i].update_path(&path[i])
-            {
-                fail = true;
-            }
+
             n_applied += 1;
         }
         self.pcbdrons.truncate(n_applied);

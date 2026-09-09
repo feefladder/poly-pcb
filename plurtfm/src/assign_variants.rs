@@ -62,11 +62,16 @@ impl Pcbdron {
     ///
     ///
     pub fn apply_variant_map(&mut self, variant_map: &mut VariantMap) {
+        info!(
+            "applying variant map {variant_map:?} to {}",
+            self.polyhedron.name
+        );
         self.variant_map.clear();
         self.variant_map.resize(self.polyhedron.faces.len(), 0);
         for (ngon, vars) in variant_map.iter_mut() {
             let mut counter = 0;
             for (face_idx, var) in self.polyhedron.iter_ngon(*ngon).zip(vars.iter()) {
+                info!("setting {face_idx:?} to {var}");
                 self.variant_map[face_idx] = *var;
                 counter += 1;
             }

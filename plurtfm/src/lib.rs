@@ -7,7 +7,7 @@ use crate::{
     polyhedron::Polyhedron,
     ui::{Animation, CurrentStep, STEPS, Tween},
 };
-use log::{info, warn};
+use log::{debug, info, warn};
 use rusqlite::Connection;
 use serde::Serialize;
 #[cfg(target_arch = "wasm32")]
@@ -391,6 +391,10 @@ impl Interface {
         let mut missing_variants = vec![Vec::new(); self.pcbs.len()];
         for n_gon in 3..=10 {
             for pcbdron in self.scene.pcboron.pcbdrons() {
+                debug!(
+                    "checking missing {n_gon} variants of {}",
+                    pcbdron.polyhedron.name
+                );
                 for var in pcbdron
                     .polyhedron
                     .iter_ngon(n_gon)
@@ -401,9 +405,8 @@ impl Interface {
                         continue;
                     }
                     // yes vector search, but probs small container, so this better than hashset
-                    if self.pcbs[n_gon].len() <= var {
-                        missing_variants[n_gon].push(var);
-                    } else if self.pcbs[n_gon][var].is_none() {
+                    if self.pcbs[n_gon].len() <= var || self.pcbs[n_gon][var].is_none() {
+                        debug!("adding variant {var} from {:?}", pcbdron.variant_map);
                         missing_variants[n_gon].push(var);
                     }
                 }
