@@ -1,7 +1,6 @@
 use std::{iter, sync::Arc};
 
-#[cfg(target_arch = "wasm32")]
-use crate::{design::PcBorsign, pcbdron::Pcbdron, pcboron::Fidx};
+use crate::{design::PcBorsign, pcboron::Fidx};
 use crate::{
     design::VariantMap,
     pcboron::Pcboron,
@@ -10,16 +9,16 @@ use crate::{
 };
 use log::{info, warn};
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+#[cfg(target_arch = "wasm32")]
+use three_d::prelude::*;
 use three_d::{
     AmbientLight, Attenuation, Camera, ClearState, Context, CpuGeometry, CpuModel, Light,
     PointLight, RenderTarget, Viewport,
 };
-#[cfg(target_arch = "wasm32")]
-use three_d::{context::RGB10_A2, prelude::*};
+use tsify::Ts;
 #[cfg(target_arch = "wasm32")]
 use tsify::Tsify;
-use tsify::{Ts, declare};
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
@@ -72,6 +71,7 @@ pub const VAR_FLAGS: [VarFlags; 4] = [
 pub struct AllVarFlags(pub [VarFlags; VAR_FLAGS.len()]);
 
 #[wasm_bindgen]
+#[cfg(target_arch = "wasm32")]
 pub fn var_flags() -> Result<Ts<AllVarFlags>, JsError> {
     Ok(AllVarFlags(VAR_FLAGS).into_ts()?)
 }
@@ -251,7 +251,7 @@ impl Interface {
                 self.scene
                     .pcboron
                     .into_iter()
-                    .chain(self.scene.pcboron.debug_path().into_iter()),
+                    .chain(&*self.scene.pcboron.debug_path()),
                 &self
                     .scene
                     .lights
@@ -453,7 +453,7 @@ impl Interface {
         self.render();
     }
 
-    pub fn set_variant(&mut self, mut varid: VarId, new_var: usize) {
+    pub fn set_variant(&mut self, varid: VarId, new_var: usize) {
         // set the face to the variant
         let Some(f_idx) = self.scene.pcboron.varid_to_fidx(varid) else {
             warn!("Could not find face idx for {varid:?}");
@@ -505,7 +505,8 @@ impl Interface {
     }
 
     fn event<T: Tsify + Serialize>(&self, name: &str, detail: T) -> Result<(), JsError> {
-        Ok(self.js_ev(name, detail.into_ts()?.js_value()))
+        self.js_ev(name, detail.into_ts()?.js_value());
+        Ok(())
     }
 
     fn js_ev(&self, name: &str, d: JsValue) {

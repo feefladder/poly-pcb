@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    iter::{self, FlatMap},
+    iter::{self},
 };
 
 use derive_more::Display;
@@ -95,7 +95,7 @@ impl Pcboron {
 
     /// from geometry_id, instance_id, get face id
     pub fn pick(&self, geometry_id: u32, instance_id: u32) -> Option<VarId> {
-        let mut id = geometry_id as usize;
+        let id = geometry_id as usize;
 
         // let model_idx = self.pcb_models[id];
         let pcb_id = self.instance_map[id]; // else {
@@ -175,7 +175,7 @@ impl Pcboron {
         pcbs: &[Vec<Option<CpuModel>>],
         variant_map: &VariantMap,
     ) -> exn::Result<Self, PcboronError> {
-        let material = PhysicalMaterial::new_opaque(
+        let _material = PhysicalMaterial::new_opaque(
             context,
             &CpuMaterial {
                 albedo: Srgba::WHITE,
@@ -277,7 +277,7 @@ impl Pcboron {
             info!("setting poly {i} to {polyhedron}");
             if self.pcbdrons.len() == i {
                 self.pcbdrons.push(Pcbdron::new(
-                    Polyhedron::load(sqlite, &polyhedron).or_raise(|| {
+                    Polyhedron::load(sqlite, polyhedron).or_raise(|| {
                         format!("Could not load {polyhedron:?}, which is the {i}th polyhedron")
                             .into()
                     })?,
@@ -294,7 +294,7 @@ impl Pcboron {
             if polyhedron != &cpol {
                 // so here, it'd actually be better (I think?) or not?
                 self.pcbdrons[i].set_poly(
-                    Polyhedron::load(sqlite, &polyhedron).or_raise(|| {
+                    Polyhedron::load(sqlite, polyhedron).or_raise(|| {
                         format!("could not apply design for poly {}", polyhedron).into()
                     })?,
                     &mut variant_map,
@@ -305,10 +305,10 @@ impl Pcboron {
             // so this would also do nothing
             if path.get(i).is_none() || fail {
                 self.pcbdrons[0].polyhedron.clear_path();
-            } else if Some(&path[i]) != cpath.as_ref() {
-                if let Err(e) = self.pcbdrons[i].update_path(&path[i]) {
-                    fail = true;
-                }
+            } else if Some(&path[i]) != cpath.as_ref()
+                && let Err(_e) = self.pcbdrons[i].update_path(&path[i])
+            {
+                fail = true;
             }
             n_applied += 1;
         }
@@ -448,7 +448,7 @@ impl Pcboron {
             .pcbdrons
             .iter_mut()
             .enumerate()
-            .rfind(|(i, dron)| !dron.polyhedron.edge_path.is_empty())
+            .rfind(|(_i, dron)| !dron.polyhedron.edge_path.is_empty())
         {
             let res = activedron
                 .polyhedron
@@ -588,21 +588,21 @@ impl Pcboron {
                     let c = colorous::MAGMA.eval_rational(i, imax.max(1));
                     colors.push(Srgba::new_opaque(c.r, c.g, c.b));
                     // also add the arrow (if it exists) from this poly to the next
-                    if exit.start as usize == *face_idx {
-                        if let Some(next_dron) = self.pcbdrons.get(i + 1) {
-                            // there could be the case that the user added a
-                            // smaller dron and the edge ran out-of-sync
-                            //
-                            // ignore
-                            let from = hedron.face_centroid(*face_idx);
-                            let to = next_dron.polyhedron.face_centroid(exit.end as usize);
-                            // just pick a slightly random vec and orthogonize
-                            let mut z = hedron.face_transforms[*face_idx].x.truncate();
-                            z -= z * z.dot((from - to).normalize());
-                            instances
-                                .transformations
-                                .push(from_to_transform(from, to, z));
-                        }
+                    if exit.start as usize == *face_idx
+                        && let Some(next_dron) = self.pcbdrons.get(i + 1)
+                    {
+                        // there could be the case that the user added a
+                        // smaller dron and the edge ran out-of-sync
+                        //
+                        // ignore
+                        let from = hedron.face_centroid(*face_idx);
+                        let to = next_dron.polyhedron.face_centroid(exit.end as usize);
+                        // just pick a slightly random vec and orthogonize
+                        let mut z = hedron.face_transforms[*face_idx].x.truncate();
+                        z -= z * z.dot((from - to).normalize());
+                        instances
+                            .transformations
+                            .push(from_to_transform(from, to, z));
                     }
                 } else if i == 0 && VarFlags::Controller.has(dron.variant_map[*face_idx]) {
                     // for the first, just give the output arrow
@@ -628,13 +628,13 @@ impl Pcboron {
         self.path_gm.set_instances(&self.path_instances);
     }
 
-    pub fn body_iter<'a>(&'a self) -> impl Iterator<Item = &'a dyn Object> {
+    pub fn body_iter(&self) -> impl Iterator<Item = &dyn Object> {
         self.pcb_models
             .iter()
             .flat_map(|pm| iter::once(&pm[2] as &dyn Object))
     }
 
-    pub fn into_iter<'a>(&'a self) -> impl Iterator<Item = &'a dyn Object> {
+    pub fn into_iter(&self) -> impl Iterator<Item = &dyn Object> {
         self.pcb_models.iter().flat_map(|pm| pm.into_iter())
     }
 }

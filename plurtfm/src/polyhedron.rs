@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use std::{collections::HashMap, error::Error};
 use three_d::*;
 
-use crate::{VarId, design::PcbPath};
+use crate::design::PcbPath;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Polyhedron {
@@ -479,7 +479,7 @@ impl Polyhedron {
                 };
             }
         }
-        let n_enter = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
+        let _n_enter = self.edge_n_on_face(visit.face_idx, visit.enter).unwrap();
         // self.edge_path
         //     .push(visit.exit(self.edge_from_face(visit.face_idx, n_enter + 1)));
         self.update_transforms();

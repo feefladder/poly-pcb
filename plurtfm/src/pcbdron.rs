@@ -86,7 +86,7 @@ impl Pcbdron {
         self.polyhedron
             .current_path()
             .transpose()
-            .unwrap_or_else(|p| Some(p))
+            .unwrap_or_else(Some)
     }
 
     /// Set the polyhedron with the given variant map

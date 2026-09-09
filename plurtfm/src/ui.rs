@@ -1,14 +1,14 @@
 //! User Interactions
 //!
 //! anything responding to events, because it was growing too big
-use log::{debug, info, warn};
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use three_d::{Cull, InnerSpace, Mat3, Quat, Vec3, Viewport, Zero, pick};
-use tsify::{Ts, Tsify, declare};
+use tsify::{Ts, Tsify};
 use wasm_bindgen::{JsError, JsValue, convert::IntoWasmAbi, prelude::wasm_bindgen};
 use web_sys::{CustomEvent, CustomEventInit, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 
-use crate::{Interface, PcbId, Scene, VarFlags, VarId, pcboron::Fidx};
+use crate::{Interface, Scene, VarId, pcboron::Fidx};
 
 #[derive(Tsify, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CurrentStep {
@@ -251,8 +251,8 @@ impl Interface {
             .pcbdrons()
             .iter()
             .enumerate()
-            .filter(|(i, p)| !p.polyhedron.edge_path.is_empty())
-            .last()
+            .filter(|(_i, p)| !p.polyhedron.edge_path.is_empty())
+            .next_back()
         {
             self.add_tween(Tween::new(
                 500.0,
@@ -276,7 +276,6 @@ impl Interface {
         // Only rotate while the primary button is held.
         if (event.buttons() & 1 == 0) && event.pointer_type() == "mouse" {
             return Ok(());
-        } else {
         }
         // optionally do something here on click-drag
         // like setting faces' colors to black for example
