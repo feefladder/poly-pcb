@@ -75,7 +75,7 @@ function update_url() {
     const names = design.value.polyhedra;
     const map = design.value.variant_map;
     const paths = design.value.path;
-    let hash = `#/${names.map(name=>name.replace(/ /g, "-")).join("|")}`;
+    let hash = `#/${names.map(name=>name.replace(/ /g, "-")).join("/")}`;
 
     const params = new URLSearchParams();
 
@@ -104,7 +104,7 @@ function apply_url() {
     const hash = decodeURIComponent(location.hash.slice(2)); // remove "#/"
 
     const [polyUrl, query = ""] = hash.split("?", 2);
-    const polyhedra = polyUrl?.toLowerCase().replace(/[-_ ]+/g, " ").split("|");
+    const polyhedra = polyUrl?.toLowerCase().replace(/[-_ ]+/g, " ").split("/");
     const entries: [number, number[]][] = [];
     const params = new URLSearchParams(query);
 
@@ -170,8 +170,9 @@ onMounted(async () => {
         iface.on_resize();
     });
     ro.observe(canvas.value);
-    apply_url();
     window.addEventListener("keydown", event => iface?.on_key(event));
+    apply_url();
+
 });
 
 onUnmounted(async () => {
