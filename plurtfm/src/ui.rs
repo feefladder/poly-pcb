@@ -119,6 +119,11 @@ impl Animation {
 
                 c.set_view(-rot.z * r, rot.z, rot.y);
             }
+            Animation::ProjectPcbDrons => {
+                let p = &mut scene.pcboron;
+                p.project_amount = value as f32;
+                p.update_instances();
+            }
             _ => todo!(),
         }
     }
@@ -188,14 +193,14 @@ impl Interface {
                     self.event("update_step", self.current_step).ok();
                 }
                 CurrentStep::MakePath => {
-                    self.complete_path();
+                    // self.complete_path();
                     info!("updating projections");
                     self.scene
                         .pcboron
                         .pcbdrons
                         .iter_mut()
                         .for_each(|b| b.update_projections(None));
-                    self.scene.pcboron.update_instances();
+                    self.add_tween(Tween::new(1500.0, Animation::ProjectPcbDrons));
                     self.render();
                 }
                 _ => {}

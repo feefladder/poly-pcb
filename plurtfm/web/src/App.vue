@@ -378,14 +378,14 @@ function start_animation() {
                             <input type="checkbox" :value="i" v-model="currentVariant"> {{ variant }} </input>
                         </label>
                     </div>
-                    <div
+                    <!-- <div
                     class="variant-menu"
                         v-else-if="step === 'MakePath' && mode === i"
                     >
                         <label v-for="(variant,i) in design.polyhedra">
                             <input type="checkbox" :value="i" v-model="showPolys"> {{ variant }} </input>
                         </label>
-                    </div>
+                    </div> -->
                     <div class="path-menu" v-else-if="step === 'MakePath' && mode === i">
                         <button  @click="iface.complete_path()" >Find path</button>
                         <button @click="iface.pop_path()">Back</button>

@@ -26,6 +26,7 @@ use crate::{
 ///
 /// importantly, it can go geometryid + instanceid -> varid
 pub struct Pcboron {
+    pub project_amount: f32,
     /// A linear list of pcbdrons
     ///
     /// The path will follow this order
@@ -158,6 +159,7 @@ impl Pcboron {
                 ),
             ),
             path_instances,
+            project_amount: 0.0,
         };
         for (n_gon, pcb_vars) in pcbs.iter().enumerate() {
             for (variant, pcb) in pcb_vars
@@ -266,7 +268,11 @@ impl Pcboron {
     ///
     /// used when adding pcbs and updating transforms. This is not a method
     /// because in the latter case, we're also holding a `&mut` to other fields on `self`
-    fn variant_transforms(pcbdrons: &[Pcbdron], pcb_id: PcbId) -> impl Iterator<Item = Mat4> {
+    fn variant_transforms(
+        pcbdrons: &[Pcbdron],
+        pcb_id: PcbId,
+        project_amount: f32,
+    ) -> impl Iterator<Item = Mat4> {
         pcbdrons.iter().flat_map(move |p| {
             p.iter_variant(pcb_id)
                 .filter(|&fidx| {
@@ -275,7 +281,7 @@ impl Pcboron {
                         .unwrap_or(&usize::MAX)
                         < p.polyhedron.faces.len() / 2
                 })
-                .map(|idx| p.face_transform(idx))
+                .map(move |idx| p.face_transform(idx, project_amount))
         })
     }
 
@@ -289,7 +295,8 @@ impl Pcboron {
         model: &CpuModel,
     ) -> exn::Result<(), PcboronError> {
         //
-        let transformations = Self::variant_transforms(&self.pcbdrons, pcb_id).collect();
+        let transformations =
+            Self::variant_transforms(&self.pcbdrons, pcb_id, self.project_amount).collect();
         let colors = None;
         // Some(
         //     self.pcbdron
@@ -323,7 +330,8 @@ impl Pcboron {
             // a pcb_model is a single pcb, but contains more than one mesh for different parts
             let pcb_id = self.instance_map[i];
             // set own instances to face transforms
-            let transforms = Self::variant_transforms(&self.pcbdrons, pcb_id).collect();
+            let transforms =
+                Self::variant_transforms(&self.pcbdrons, pcb_id, self.project_amount).collect();
             self.instances[i].transformations = transforms;
 
             // optional debug colors
@@ -408,7 +416,7 @@ impl Pcboron {
                 info!("making arrow for projection {p:?}");
                 transforms.push(from_to_transform(
                     p.point,
-                    p.point + p.arrow * p.dist,
+                    p.point + p.arrow.z * p.dist,
                     p.point.normalize().cross(Vec3::unit_z()),
                 ));
                 colors.push(Srgba::BLUE);
@@ -436,6 +444,14 @@ impl Pcboron {
                 },
             ) in hedron.edge_path.iter().enumerate()
             {
+                let proj = dron.projections.range(..=i).next_back();
+                let p = |p: Mat4| {
+                    if let Some(pr) = proj {
+                        pr.1.project(p, self.project_amount)
+                    } else {
+                        p
+                    }
+                };
                 if i == imax {
                     // let edge_n = hedron.edge_n_on_face(*face_idx, *enter).unwrap();
                     // let n_face_idx = hedron.other_face(*face_idx, edge_n);
@@ -447,11 +463,11 @@ impl Pcboron {
                     // aah...
                     // ehh...
                     //
-                    transforms.push(from_to_transform(
+                    transforms.push(p(from_to_transform(
                         hedron.edge_centroid(*enter),
                         hedron.face_centroid(*face_idx),
                         hedron.face_normal(*face_idx),
-                    ));
+                    )));
                     let c = colorous::MAGMA.eval_rational(i, imax.max(1));
                     colors.push(Srgba::new_opaque(c.r, c.g, c.b));
                     // also add the arrow (if it exists) from this poly to the next
@@ -471,18 +487,18 @@ impl Pcboron {
                     }
                 } else if i == 0 && VarFlags::Controller.has(dron.variant_map[*face_idx]) {
                     // for the first, just give the output arrow
-                    transforms.push(from_to_transform(
+                    transforms.push(p(from_to_transform(
                         hedron.face_centroid(*face_idx),
                         hedron.edge_centroid(*exit),
                         hedron.face_normal(*face_idx),
-                    ));
+                    )));
                 } else {
                     // point from edge to edge
-                    transforms.push(from_to_transform(
+                    transforms.push(p(from_to_transform(
                         hedron.edge_centroid(*enter),
                         hedron.edge_centroid(*exit),
                         hedron.face_normal(*face_idx),
-                    ));
+                    )));
                 }
                 let c = colorous::MAGMA.eval_rational(i, imax.max(1));
                 colors.push(Srgba::new_opaque(c.r, c.g, c.b));

@@ -3,8 +3,10 @@ use exn::{OptionExt, ResultExt};
 use log::{debug, error, info, warn};
 use rusqlite::Connection;
 use smallvec::SmallVec;
-use std::{collections::HashMap, error::Error};
+use std::{collections::HashMap, error::Error, f32};
 use three_d::*;
+
+use std::f32::consts::PI;
 
 use crate::{
     design::PcbPath,
@@ -379,6 +381,10 @@ impl Polyhedron {
             / self.vertices.len() as f32
     }
 
+    pub fn face_inradius(&self, face_idx: usize) -> f32 {
+        2.0 / (2.0 * (PI / self.faces[face_idx].len() as f32).tan())
+    }
+
     /// Create a sphere with average radius of the polyhedron
     pub fn sphere(
         &self,
@@ -416,6 +422,7 @@ impl Polyhedron {
         }
     }
 
+    /// cross a face
     pub fn cross(&mut self, cr: PolygonCrossing) {
         self.face_path_index[cr.face_idx].push(self.edge_path.len());
         self.edge_path.push(cr);
