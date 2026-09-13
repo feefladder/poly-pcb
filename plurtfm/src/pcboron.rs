@@ -1,16 +1,19 @@
 use std::{
     error::Error,
     iter::{self},
+    ops::Range,
 };
 
 use derive_more::Display;
 use exn::ResultExt;
 use log::{debug, info};
 use rusqlite::Connection;
+use serde::Deserialize;
 use three_d::{
     ColorMaterial, Context, CpuMaterial, CpuMesh, CpuModel, Gm, InstancedMesh, InstancedModel,
     Instances, Mat4, Object, PhysicalMaterial, Srgba, Vec3, prelude::*,
 };
+use tsify::Tsify;
 
 use crate::{
     PcbId, VarFlags, VarId,
@@ -19,6 +22,9 @@ use crate::{
     pcbdron::Pcbdron,
     polyhedron::Polyhedron,
 };
+
+#[derive(Tsify, Deserialize)]
+pub struct R(Range<usize>);
 
 /// [`Pcboron`] can be rendered as self-contained something
 ///

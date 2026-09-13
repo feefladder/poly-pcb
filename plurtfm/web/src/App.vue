@@ -370,6 +370,7 @@ function start_animation() {
                             </option>
                         </select>
                     </div>
+
                     <div
                     class="variant-menu"
                         v-else-if="typeof step === 'object' && 'AssignVariants' in step && mode === i"
@@ -390,6 +391,7 @@ function start_animation() {
                         <button  @click="iface.complete_path()" >Find path</button>
                         <button @click="iface.pop_path()">Back</button>
                     </div>
+                    <input v-else-if="step === 'MakeItReal' && mode === i" type="range" min="0" :max="100" value=10></input>
                 </div>
             </template>
 

@@ -15,6 +15,7 @@ pub enum CurrentStep {
     SelectPoly,
     AssignVariants(usize),
     MakePath,
+    MakeItReal,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +36,15 @@ impl Tween {
         }
     }
 
+    pub fn rev(duration: f64, animation: Animation) -> Self {
+        Self {
+            start: None,
+            duration,
+            ease: |x| 1.0 - x,
+            animation,
+        }
+    }
+
     /// update the tween to the given timestamp, indicating if it's still busy
     pub fn update(&mut self, scene: &mut Scene, timestamp: f64) -> bool {
         let start = *self.start.get_or_insert(timestamp);
@@ -43,8 +53,10 @@ impl Tween {
             warn!("timestamp {timestamp} less than start: {:?}", self.start);
         }
         // check now for completion, so the ease can do overshoot
+        // or other weird things, like reversing the animation for example
+        // for example, I would say
         if t >= 1.0 {
-            self.animation.apply(scene, 1.0);
+            self.animation.apply(scene, (self.ease)(1.0));
             false
         } else {
             self.animation.apply(scene, (self.ease)(t));
@@ -129,11 +141,14 @@ impl Animation {
     }
 }
 
-pub const N_STEPS: usize = 3;
+// below is needed for ts, since we can't like ehh..
+// idk
+pub const N_STEPS: usize = 4;
 pub const STEPS: [CurrentStep; N_STEPS] = [
     CurrentStep::SelectPoly,
     CurrentStep::AssignVariants(0),
     CurrentStep::MakePath,
+    CurrentStep::MakeItReal,
 ];
 
 #[derive(Tsify, Serialize)]
@@ -405,6 +420,7 @@ impl Interface {
             CurrentStep::AssignVariants(variant) => {
                 self.set_variant(varid, variant);
             }
+            _ => {}
         }
     }
 

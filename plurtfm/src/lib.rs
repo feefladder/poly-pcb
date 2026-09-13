@@ -35,6 +35,7 @@ mod ui;
 mod stereojection;
 
 mod assign_variants;
+mod make_it_real;
 mod make_path;
 mod select_poly;
 
@@ -233,7 +234,22 @@ impl Interface {
     }
 
     pub fn set_step(&mut self, step: Ts<CurrentStep>) -> Result<(), JsError> {
-        self.current_step = step.to_rust()?;
+        let to = step.to_rust()?;
+        match (self.current_step, to) {
+            (_, CurrentStep::MakeItReal) => {
+                self.scene
+                    .pcboron
+                    .pcbdrons
+                    .iter_mut()
+                    .for_each(|b| b.update_projections(None));
+                self.add_tween(Tween::new(1500.0, Animation::ProjectPcbDrons));
+            }
+            (CurrentStep::MakeItReal, _) => {
+                self.add_tween(Tween::rev(1500.0, Animation::ProjectPcbDrons));
+            }
+            _ => {}
+        }
+        self.current_step = to;
         Ok(())
     }
 
